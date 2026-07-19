@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proofrail.local/schemas/case.schema.json",
+  "title": "Proofrail case",
+  "description": "Provider-neutral representation of claims, evidence, findings, provenance, acceptance stages, and a case verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "title",
+    "source",
+    "requested_change",
+    "agent_completion_claim",
+    "acceptance_stages",
+    "claims",
+    "evidence",
+    "findings",
+    "verdict"
+  ],
+  "properties": {
+    "id": { "$ref": "#/$defs/nonEmptyString" },
+    "title": { "$ref": "#/$defs/nonEmptyString" },
+    "source": { "$ref": "#/$defs/nonEmptyString" },
+    "requested_change": { "$ref": "#/$defs/requestedChange" },
+    "agent_completion_claim": { "$ref": "#/$defs/nonEmptyString" },
+    "acceptance_stages": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "attempted" },
+        { "const": "executed" },
+        { "const": "artifact_changed" },
+        { "const": "claim_supported" },
+        { "const": "outcome_verified" }
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "claims": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/claim" },
+      "minItems": 1
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidence" },
+      "minItems": 1
+    },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" },
+      "minItems": 1
+    },
+    "verdict": { "$ref": "#/$defs/verdict" }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stringIdArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmptyString" },
+      "uniqueItems": true
+    },
+    "nonEmptyStringIdArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmptyString" },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "acceptanceStage": {
+      "enum": [
+        "attempted",
+        "executed",
+        "artifact_changed",
+        "claim_supported",
+        "outcome_verified"
+      ]
+    },
+    "atomicClaimStatus": {
+      "enum": [
+        "verified",
+        "unsupported",
+        "contradicted",
+        "human_review_required"
+      ]
+    },
+    "overallCaseVerdict": {
+      "enum": [
+        "verified",
+        "partially_verified",
+        "unsupported",
+        "contradicted",
+        "human_review_required"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_type",
+        "authentication",
+        "independently_verified",
+        "limitations"
+      ],
+      "properties": {
+        "source_type": {
+          "enum": [
+            "scenario_document",
+            "git_artifact",
+            "deterministic_validation"
+          ]
+        },
+        "authentication": {
+          "enum": [
+            "authenticated",
+            "unauthenticated",
+            "not_applicable"
+          ]
+        },
+        "independently_verified": { "type": "boolean" },
+        "limitations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "requestedChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "required_artifact_changes"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/nonEmptyString" },
+        "required_artifact_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "change"],
+            "properties": {
+              "path": { "$ref": "#/$defs/nonEmptyString" },
+              "location": { "$ref": "#/$defs/nonEmptyString" },
+              "change": { "$ref": "#/$defs/nonEmptyString" }
+            }
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "statement",
+        "acceptance_stage",
+        "status",
+        "evidence_ids",
+        "finding_ids",
+        "provenance"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "statement": { "$ref": "#/$defs/nonEmptyString" },
+        "acceptance_stage": { "$ref": "#/$defs/acceptanceStage" },
+        "status": { "$ref": "#/$defs/atomicClaimStatus" },
+        "evidence_ids": { "$ref": "#/$defs/stringIdArray" },
+        "finding_ids": { "$ref": "#/$defs/nonEmptyStringIdArray" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "summary",
+        "acceptance_stage",
+        "claim_ids",
+        "provenance"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "kind": {
+          "enum": [
+            "artifact_derived",
+            "execution",
+            "scenario_provided",
+            "authenticated_external",
+            "unauthenticated_external"
+          ]
+        },
+        "summary": { "$ref": "#/$defs/nonEmptyString" },
+        "acceptance_stage": { "$ref": "#/$defs/acceptanceStage" },
+        "claim_ids": { "$ref": "#/$defs/nonEmptyStringIdArray" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "claim_id",
+        "evidence_ids",
+        "acceptance_stage",
+        "result",
+        "summary",
+        "provenance"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "claim_id": { "$ref": "#/$defs/nonEmptyString" },
+        "evidence_ids": { "$ref": "#/$defs/stringIdArray" },
+        "acceptance_stage": { "$ref": "#/$defs/acceptanceStage" },
+        "result": {
+          "enum": ["supports", "contradicts", "insufficient"]
+        },
+        "summary": { "$ref": "#/$defs/nonEmptyString" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "explanation", "finding_ids"],
+      "properties": {
+        "status": { "$ref": "#/$defs/overallCaseVerdict" },
+        "explanation": { "$ref": "#/$defs/nonEmptyString" },
+        "finding_ids": { "$ref": "#/$defs/nonEmptyStringIdArray" }
+      }
+    }
+  }
+}
