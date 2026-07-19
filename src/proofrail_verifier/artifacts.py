@@ -76,6 +76,14 @@ def _apply_block(files: dict[str, str], path: str, lines: list[str]) -> None:
 
 
 def inspect_actual_state(fixture_dir: Path) -> ArtifactState:
+    artifact_dir = fixture_dir / "artifacts"
+    if artifact_dir.is_dir():
+        files = _read_initial_files(artifact_dir)
+        return ArtifactState(
+            initial_files=frozenset(files),
+            final_files=files,
+            changed_paths=tuple(sorted(files)),
+        )
     initial = _read_initial_files(fixture_dir / "initial")
     final = dict(initial)
     patch_text = (fixture_dir / "actual.patch").read_text(encoding="utf-8")

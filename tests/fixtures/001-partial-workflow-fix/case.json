@@ -35,6 +35,8 @@
       "statement": "bun.lockb was deleted.",
       "acceptance_stage": "claim_supported",
       "status": "verified",
+      "required_observation": "file_contents",
+      "evaluation": {"predicate": "path_absent", "path": "bun.lockb"},
       "evidence_ids": ["actual-commit-diff"],
       "finding_ids": ["deletion-present"],
       "provenance": {
@@ -49,6 +51,12 @@
       "statement": "Both workflow trigger blocks now watch bun.lock.",
       "acceptance_stage": "claim_supported",
       "status": "contradicted",
+      "required_observation": "file_contents",
+      "evaluation": {
+        "predicate": "workflow_paths_equal",
+        "path": ".github/workflows/ci.yml",
+        "expected_values": ["bun.lock"]
+      },
       "evidence_ids": ["actual-commit-diff"],
       "finding_ids": ["workflow-change-absent"],
       "provenance": {
@@ -63,6 +71,8 @@
       "statement": "The successful workflow run proves that the bun.lock trigger works.",
       "acceptance_stage": "outcome_verified",
       "status": "unsupported",
+      "required_observation": "workflow_trigger_event",
+      "evaluation": {"predicate": "evidence_capability"},
       "evidence_ids": ["reported-workflow-run"],
       "finding_ids": ["run-does-not-verify-trigger"],
       "provenance": {
@@ -77,6 +87,8 @@
       "statement": "The completed change was merged.",
       "acceptance_stage": "executed",
       "status": "human_review_required",
+      "required_observation": "merge_record",
+      "evaluation": {"predicate": "authenticated_evidence"},
       "evidence_ids": [],
       "finding_ids": ["merge-unverified"],
       "provenance": {
@@ -93,6 +105,8 @@
       "kind": "artifact_derived",
       "summary": "The reconstructed final commit deletes bun.lockb and does not modify the workflow file.",
       "acceptance_stage": "artifact_changed",
+      "observation_method": "git_diff",
+      "observes": ["file_contents"],
       "claim_ids": [
         "obsolete-lockfile-deleted",
         "workflow-triggers-updated"
@@ -109,6 +123,9 @@
       "kind": "scenario_provided",
       "summary": "A workflow run reportedly succeeded after bun.lockb was deleted and was interpreted as proof of the bun.lock trigger.",
       "acceptance_stage": "executed",
+      "observation_method": "external_record",
+      "observes": ["command_exit_status"],
+      "execution_succeeded": true,
       "claim_ids": ["green-run-proves-new-trigger"],
       "provenance": {
         "source_type": "scenario_document",

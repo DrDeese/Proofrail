@@ -1,8 +1,7 @@
-"""Evaluate fixture 001 claims and aggregate its deterministic verdict."""
+"""Evaluate supported structured predicates and aggregate deterministic verdicts."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from .artifacts import ArtifactState, inspect_actual_state, workflow_trigger_paths
@@ -10,15 +9,17 @@ from .loading import FixtureBundle
 
 
 class VerificationError(ValueError):
-    """Raised when fixture relationships or required claims are invalid."""
+    """Raised when fixture relationships or capability labels are invalid."""
 
 
-CLAIM_IDS = (
-    "obsolete-lockfile-deleted",
-    "workflow-triggers-updated",
-    "green-run-proves-new-trigger",
-    "change-merged",
-)
+METHOD_CAPABILITIES = {
+    "git_diff": {"file_contents"},
+    "file_inspection": {"file_contents"},
+    "static_http_fetch": {"static_response_body", "command_exit_status"},
+    "browser_dom_capture": {"client_rendered_dom"},
+    "command_execution": {"command_exit_status"},
+    "external_record": {"command_exit_status", "workflow_trigger_event", "merge_record"},
+}
 
 
 def _index(items: list[dict[str, Any]], label: str) -> dict[str, dict[str, Any]]:
@@ -34,8 +35,14 @@ def _index(items: list[dict[str, Any]], label: str) -> dict[str, dict[str, Any]]
 def _validate_relationships(
     claims: dict[str, dict[str, Any]], evidence: dict[str, dict[str, Any]]
 ) -> None:
-    if tuple(claims) != CLAIM_IDS:
-        raise VerificationError("fixture 001 claim set or order is materially altered")
+    for evidence_id, item in evidence.items():
+        method = item.get("observation_method")
+        observes = item.get("observes")
+        allowed = METHOD_CAPABILITIES.get(method)
+        if allowed is None or not isinstance(observes, list) or not set(observes).issubset(allowed):
+            raise VerificationError(
+                f"evidence {evidence_id!r} has capabilities inconsistent with method {method!r}"
+            )
     for claim_id, claim in claims.items():
         evidence_ids = claim.get("evidence_ids")
         if not isinstance(evidence_ids, list):
@@ -57,113 +64,108 @@ def _validate_relationships(
 def _limitations(*items: dict[str, Any]) -> list[str]:
     result: list[str] = []
     for item in items:
-        provenance = item.get("provenance", {})
-        for limitation in provenance.get("limitations", []):
+        for limitation in item.get("provenance", {}).get("limitations", []):
             if limitation not in result:
                 result.append(limitation)
     return result
 
 
+def _related_evidence(
+    claim: dict[str, Any], evidence: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    return [evidence[evidence_id] for evidence_id in claim["evidence_ids"]]
+
+
+def _capable_evidence(
+    claim: dict[str, Any], evidence: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    required = claim["required_observation"]
+    return [item for item in _related_evidence(claim, evidence) if required in item["observes"]]
+
+
 def _finding(
-    claim_id: str,
-    status: str,
-    summary: str,
-    evidence_ids: list[str],
-    limitations: list[str],
+    claim: dict[str, Any], status: str, summary: str, evidence: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
+    related = _related_evidence(claim, evidence)
     return {
-        "claim_id": claim_id,
+        "claim_id": claim["id"],
         "status": status,
         "finding": summary,
-        "evidence_ids": evidence_ids,
-        "provenance_limitations": limitations,
+        "evidence_ids": list(claim["evidence_ids"]),
+        "provenance_limitations": _limitations(claim, *related),
     }
 
 
-def _evaluate_deletion(claim: dict[str, Any], state: ArtifactState) -> dict[str, Any]:
-    deleted = (
-        "bun.lockb" in state.initial_files
-        and "bun.lockb" not in state.final_files
-        and "bun.lockb" in state.changed_paths
-    )
-    status = "verified" if deleted else "contradicted"
-    summary = (
-        "The reconstructed final artifact deletes bun.lockb."
-        if deleted
-        else "The reconstructed final artifact does not contain the claimed bun.lockb deletion."
-    )
-    return _finding(claim["id"], status, summary, ["actual-commit-diff"], _limitations(claim))
-
-
-def _evaluate_workflow(claim: dict[str, Any], state: ArtifactState) -> dict[str, Any]:
-    paths = workflow_trigger_paths(state)
-    updated = paths == {"push": ("bun.lock",), "pull_request": ("bun.lock",)}
-    old_configuration = paths == {"push": ("bun.lockb",), "pull_request": ("bun.lockb",)}
-    if updated:
-        status = "verified"
-        summary = "Both reconstructed workflow path filters reference bun.lock."
-    elif old_configuration:
-        status = "contradicted"
-        summary = "The reconstructed workflow still references bun.lockb twice."
-    else:
-        status = "unsupported"
-        summary = "The reconstructed workflow does not deterministically support either expected trigger state."
-    return _finding(claim["id"], status, summary, ["actual-commit-diff"], _limitations(claim))
-
-
-def _authenticated_evidence(
-    claim: dict[str, Any], evidence: dict[str, dict[str, Any]]
-) -> dict[str, Any] | None:
-    for evidence_id in claim["evidence_ids"]:
-        item = evidence[evidence_id]
-        provenance = item.get("provenance", {})
-        if (
-            item.get("kind") == "authenticated_external"
-            and provenance.get("authentication") == "authenticated"
-            and provenance.get("independently_verified") is True
-        ):
-            return item
-    return None
-
-
-def _evaluate_run(
-    claim: dict[str, Any], evidence: dict[str, dict[str, Any]]
+def _evaluate_claim(
+    claim: dict[str, Any], evidence: dict[str, dict[str, Any]], state: ArtifactState
 ) -> dict[str, Any]:
-    authenticated = _authenticated_evidence(claim, evidence)
-    referenced = [evidence[evidence_id] for evidence_id in claim["evidence_ids"]]
-    status = "verified" if authenticated is not None else "unsupported"
-    summary = (
-        "Authenticated execution evidence verifies the claimed trigger outcome."
-        if authenticated is not None
-        else "Scenario-provided workflow information does not authenticate the claimed trigger outcome."
-    )
-    return _finding(
-        claim["id"],
-        status,
-        summary,
-        list(claim["evidence_ids"]),
-        _limitations(claim, *referenced),
-    )
+    evaluation = claim.get("evaluation", {})
+    predicate = evaluation.get("predicate")
+    capable = _capable_evidence(claim, evidence)
 
+    if predicate == "path_absent":
+        path = evaluation.get("path")
+        absent = path in state.initial_files and path not in state.final_files and path in state.changed_paths
+        if absent and capable:
+            return _finding(claim, "verified", f"The final artifact deletes {path}.", evidence)
+        return _finding(claim, "contradicted", f"The final artifact does not delete {path}.", evidence)
 
-def _evaluate_merge(
-    claim: dict[str, Any], evidence: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
-    authenticated = _authenticated_evidence(claim, evidence)
-    referenced = [evidence[evidence_id] for evidence_id in claim["evidence_ids"]]
-    status = "verified" if authenticated is not None else "human_review_required"
-    summary = (
-        "Authenticated external evidence verifies the merge claim."
-        if authenticated is not None
-        else "No authenticated merge provenance is available in the offline fixture."
-    )
-    return _finding(
-        claim["id"],
-        status,
-        summary,
-        list(claim["evidence_ids"]),
-        _limitations(claim, *referenced),
-    )
+    if predicate == "workflow_paths_equal":
+        expected = tuple(evaluation.get("expected_values", []))
+        actual = workflow_trigger_paths(state)
+        target = {"push": expected, "pull_request": expected}
+        if actual == target and capable:
+            return _finding(claim, "verified", "Both workflow path filters match the claim.", evidence)
+        if actual != target:
+            return _finding(claim, "contradicted", "The workflow path filters contradict the claim.", evidence)
+        return _finding(claim, "unsupported", "No capable evidence observes the workflow file.", evidence)
+
+    if predicate == "execution_success":
+        if any(item.get("execution_succeeded") is True for item in capable):
+            return _finding(claim, "verified", "Structured execution evidence records success.", evidence)
+        return _finding(claim, "unsupported", "No capable evidence records successful execution.", evidence)
+
+    if predicate == "text_present":
+        path = evaluation.get("path")
+        expected_text = evaluation.get("expected_text")
+        content = state.final_files.get(path, "")
+        capable = [item for item in capable if item.get("artifact_path") == path]
+        if expected_text not in content:
+            return _finding(claim, "contradicted", "The inspected artifact does not contain the expected text.", evidence)
+        if capable:
+            return _finding(claim, "verified", "The inspected artifact contains the expected text.", evidence)
+        return _finding(claim, "unsupported", "The text exists but no capable evidence observes it.", evidence)
+
+    if predicate == "evidence_capability":
+        expected_text = evaluation.get("expected_text")
+        matching = capable
+        if expected_text is not None:
+            matching = [item for item in capable if item.get("observed_text") == expected_text]
+        if evaluation.get("requires_authentication") is True:
+            matching = [
+                item
+                for item in matching
+                if item.get("kind") == "authenticated_external"
+                and item.get("provenance", {}).get("authentication") == "authenticated"
+                and item.get("provenance", {}).get("independently_verified") is True
+            ]
+        if matching:
+            return _finding(claim, "verified", "Capable evidence observes the claimed outcome.", evidence)
+        return _finding(claim, "unsupported", "Supplied evidence cannot observe the claimed outcome.", evidence)
+
+    if predicate == "authenticated_evidence":
+        authenticated = [
+            item
+            for item in capable
+            if item.get("kind") == "authenticated_external"
+            and item.get("provenance", {}).get("authentication") == "authenticated"
+            and item.get("provenance", {}).get("independently_verified") is True
+        ]
+        if authenticated:
+            return _finding(claim, "verified", "Authenticated capable evidence supports the claim.", evidence)
+        return _finding(claim, "human_review_required", "Authenticated capable evidence is unavailable.", evidence)
+
+    raise VerificationError(f"unsupported evaluation predicate {predicate!r}")
 
 
 def aggregate_verdict(claim_results: list[dict[str, Any]]) -> str:
@@ -179,24 +181,17 @@ def aggregate_verdict(claim_results: list[dict[str, Any]]) -> str:
     return "human_review_required"
 
 
-def evaluate_fixture_001(bundle: FixtureBundle) -> dict[str, Any]:
+def evaluate_case(bundle: FixtureBundle) -> dict[str, Any]:
     claims = _index(bundle.case["claims"], "claim")
     evidence = _index(bundle.case["evidence"], "evidence")
     _validate_relationships(claims, evidence)
     state = inspect_actual_state(bundle.fixture_dir)
-
-    results = [
-        _evaluate_deletion(claims["obsolete-lockfile-deleted"], state),
-        _evaluate_workflow(claims["workflow-triggers-updated"], state),
-        _evaluate_run(claims["green-run-proves-new-trigger"], evidence),
-        _evaluate_merge(claims["change-merged"], evidence),
-    ]
+    results = [_evaluate_claim(claim, evidence, state) for claim in claims.values()]
     limitations: list[str] = []
     for result in results:
         for limitation in result["provenance_limitations"]:
             if limitation not in limitations:
                 limitations.append(limitation)
-
     return {
         "case_id": bundle.case["id"],
         "claims": results,
@@ -213,3 +208,7 @@ def evaluate_fixture_001(bundle: FixtureBundle) -> dict[str, Any]:
             },
         },
     }
+
+
+def evaluate_fixture_001(bundle: FixtureBundle) -> dict[str, Any]:
+    return evaluate_case(bundle)

@@ -14,7 +14,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-from proofrail_verifier import evaluate_fixture_001, load_fixture_001, render_json
+from proofrail_verifier import evaluate_case, load_fixture_001, render_json
 from proofrail_verifier.evaluation import VerificationError
 
 
@@ -48,10 +48,10 @@ class Fixture001VerifierTests(unittest.TestCase):
         return temporary, root
 
     def test_fixture_001_expected_result_and_deterministic_json(self) -> None:
-        result = evaluate_fixture_001(self.bundle)
+        result = evaluate_case(self.bundle)
         self.assertEqual(self._status_map(result), EXPECTED_STATUSES)
         self.assertEqual(result["overall_verdict"], "partially_verified")
-        independently_loaded = evaluate_fixture_001(load_fixture_001(REPOSITORY_ROOT))
+        independently_loaded = evaluate_case(load_fixture_001(REPOSITORY_ROOT))
         self.assertEqual(render_json(result), render_json(independently_loaded))
         self.assertEqual(json.loads(render_json(result)), result)
         self.assertEqual(
@@ -83,7 +83,7 @@ class Fixture001VerifierTests(unittest.TestCase):
                 (fixture / "intended.patch").read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
-            result = evaluate_fixture_001(load_fixture_001(root))
+            result = evaluate_case(load_fixture_001(root))
             self.assertEqual(self._status_map(result)["workflow-triggers-updated"], "verified")
 
     def test_existing_bun_lockb_is_not_verified_as_deleted(self) -> None:
@@ -91,7 +91,7 @@ class Fixture001VerifierTests(unittest.TestCase):
         with temporary:
             fixture = root / "tests" / "fixtures" / "001-partial-workflow-fix"
             (fixture / "actual.patch").write_text("", encoding="utf-8")
-            result = evaluate_fixture_001(load_fixture_001(root))
+            result = evaluate_case(load_fixture_001(root))
             self.assertEqual(self._status_map(result)["obsolete-lockfile-deleted"], "contradicted")
 
     def test_authenticated_merge_provenance_requires_new_status(self) -> None:
@@ -107,6 +107,8 @@ class Fixture001VerifierTests(unittest.TestCase):
                     "kind": "authenticated_external",
                     "summary": "Authenticated merge record.",
                     "acceptance_stage": "executed",
+                    "observation_method": "external_record",
+                    "observes": ["merge_record"],
                     "claim_ids": ["change-merged"],
                     "provenance": {
                         "source_type": "scenario_document",
@@ -117,7 +119,7 @@ class Fixture001VerifierTests(unittest.TestCase):
                 }
             )
             case_path.write_text(json.dumps(case, indent=2) + "\n", encoding="utf-8")
-            result = evaluate_fixture_001(load_fixture_001(root))
+            result = evaluate_case(load_fixture_001(root))
             self.assertEqual(self._status_map(result)["change-merged"], "verified")
 
     def test_materially_broken_evidence_relationship_fails(self) -> None:
@@ -126,7 +128,7 @@ class Fixture001VerifierTests(unittest.TestCase):
         actual_diff["claim_ids"].remove("workflow-triggers-updated")
         broken_bundle = replace(self.bundle, case=altered)
         with self.assertRaisesRegex(VerificationError, "invalid evidence relationship"):
-            evaluate_fixture_001(broken_bundle)
+            evaluate_case(broken_bundle)
 
 
 if __name__ == "__main__":

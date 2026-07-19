@@ -1,0 +1,134 @@
+{
+  "id": "002-incapable-validation-command",
+  "title": "Static HTML cannot observe client-rendered text",
+  "source": "scenario-provided Step 4 failure description",
+  "requested_change": {
+    "summary": "Verify whether a deployed SPA visibly renders Dashboard ready.",
+    "required_artifact_changes": [
+      {
+        "path": "artifacts/app.js",
+        "change": "client script renders Dashboard ready"
+      }
+    ]
+  },
+  "agent_completion_claim": "The validation command succeeded and proves the deployed page visibly renders Dashboard ready.",
+  "acceptance_stages": [
+    "attempted",
+    "executed",
+    "artifact_changed",
+    "claim_supported",
+    "outcome_verified"
+  ],
+  "claims": [
+    {
+      "id": "validation-command-executed",
+      "statement": "The supplied validation command executed successfully.",
+      "acceptance_stage": "executed",
+      "status": "verified",
+      "required_observation": "command_exit_status",
+      "evaluation": {"predicate": "execution_success"},
+      "evidence_ids": ["static-shell-command"],
+      "finding_ids": ["command-success-recorded"],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": ["The fixture records execution evidence but does not contact a deployment."]
+      }
+    },
+    {
+      "id": "page-renders-expected-text",
+      "statement": "The deployed page visibly renders Dashboard ready.",
+      "acceptance_stage": "outcome_verified",
+      "status": "unsupported",
+      "required_observation": "client_rendered_dom",
+      "evaluation": {"predicate": "evidence_capability", "expected_text": "Dashboard ready", "requires_authentication": true},
+      "evidence_ids": ["static-shell-command"],
+      "finding_ids": ["static-shell-cannot-observe-dom"],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": ["No browser-rendered DOM evidence is included."]
+      }
+    },
+    {
+      "id": "static-html-contains-expected-text",
+      "statement": "The static HTML response contains Dashboard ready.",
+      "acceptance_stage": "claim_supported",
+      "status": "contradicted",
+      "required_observation": "static_response_body",
+      "evaluation": {
+        "predicate": "text_present",
+        "path": "index.html",
+        "expected_text": "Dashboard ready"
+      },
+      "evidence_ids": ["static-shell-command"],
+      "finding_ids": ["text-absent-from-static-shell"],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": []
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "id": "static-shell-command",
+      "kind": "execution",
+      "summary": "A successful request read only the static HTML shell and searched it for Dashboard ready.",
+      "acceptance_stage": "executed",
+      "observation_method": "static_http_fetch",
+      "observes": ["static_response_body", "command_exit_status"],
+      "execution_succeeded": true,
+      "command": "curl https://example.invalid/ | grep 'Dashboard ready'",
+      "artifact_path": "index.html",
+      "claim_ids": [
+        "validation-command-executed",
+        "page-renders-expected-text",
+        "static-html-contains-expected-text"
+      ],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": ["Execution success is scenario-provided; the command is represented as data and is never executed by the fixture."]
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "command-success-recorded",
+      "claim_id": "validation-command-executed",
+      "evidence_ids": ["static-shell-command"],
+      "acceptance_stage": "executed",
+      "result": "supports",
+      "summary": "Structured execution evidence records a successful command.",
+      "provenance": {"source_type": "deterministic_validation", "authentication": "not_applicable", "independently_verified": true, "limitations": []}
+    },
+    {
+      "id": "static-shell-cannot-observe-dom",
+      "claim_id": "page-renders-expected-text",
+      "evidence_ids": ["static-shell-command"],
+      "acceptance_stage": "outcome_verified",
+      "result": "insufficient",
+      "summary": "A static response body cannot observe the client-rendered DOM.",
+      "provenance": {"source_type": "deterministic_validation", "authentication": "not_applicable", "independently_verified": true, "limitations": ["Browser execution is outside this fixture."]}
+    },
+    {
+      "id": "text-absent-from-static-shell",
+      "claim_id": "static-html-contains-expected-text",
+      "evidence_ids": ["static-shell-command"],
+      "acceptance_stage": "claim_supported",
+      "result": "contradicts",
+      "summary": "The static HTML shell does not contain Dashboard ready.",
+      "provenance": {"source_type": "deterministic_validation", "authentication": "not_applicable", "independently_verified": true, "limitations": []}
+    }
+  ],
+  "verdict": {
+    "status": "partially_verified",
+    "explanation": "Command execution is verified, but the static response cannot observe the client-rendered DOM and the expected text is absent from the static HTML shell.",
+    "finding_ids": ["command-success-recorded", "static-shell-cannot-observe-dom", "text-absent-from-static-shell"]
+  }
+}

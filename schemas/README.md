@@ -20,6 +20,8 @@ Atomic claims use `verified`, `unsupported`, `contradicted`, or `human_review_re
 
 Evidence kinds distinguish artifact-derived evidence, execution evidence, scenario-provided evidence, authenticated external evidence, and unauthenticated external evidence. Every claim, evidence item, and finding has provenance recording its source type, authentication state, independent-verification state, and limitations.
 
+Claims also declare a small evaluation predicate and the observation capability they require. Evidence declares how it was obtained and what it can observe. The supported capabilities are deliberately limited to the two current fixtures: file contents, static response bodies, client-rendered DOM, command exit status, workflow trigger events, and merge records. A successful command cannot verify a claim requiring an observation capability the command lacks.
+
 IDs connect claims to evidence and findings. The fixture validation test checks that those references resolve and that IDs are unique; Draft 2020-12 does not provide database-style foreign-key constraints.
 
 ## Offline validation

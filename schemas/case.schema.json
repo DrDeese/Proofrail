@@ -95,6 +95,47 @@
         "human_review_required"
       ]
     },
+    "observationCapability": {
+      "enum": [
+        "file_contents",
+        "static_response_body",
+        "client_rendered_dom",
+        "command_exit_status",
+        "workflow_trigger_event",
+        "merge_record"
+      ]
+    },
+    "observationMethod": {
+      "enum": [
+        "git_diff",
+        "file_inspection",
+        "static_http_fetch",
+        "browser_dom_capture",
+        "command_execution",
+        "external_record"
+      ]
+    },
+    "claimEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["predicate"],
+      "properties": {
+        "predicate": {
+          "enum": [
+            "path_absent",
+            "workflow_paths_equal",
+            "evidence_capability",
+            "authenticated_evidence",
+            "execution_success",
+            "text_present"
+          ]
+        },
+        "path": { "$ref": "#/$defs/nonEmptyString" },
+        "expected_text": { "$ref": "#/$defs/nonEmptyString" },
+        "requires_authentication": { "type": "boolean" },
+        "expected_values": { "$ref": "#/$defs/nonEmptyStringIdArray" }
+      }
+    },
     "provenance": {
       "type": "object",
       "additionalProperties": false,
@@ -157,6 +198,8 @@
         "statement",
         "acceptance_stage",
         "status",
+        "required_observation",
+        "evaluation",
         "evidence_ids",
         "finding_ids",
         "provenance"
@@ -166,6 +209,8 @@
         "statement": { "$ref": "#/$defs/nonEmptyString" },
         "acceptance_stage": { "$ref": "#/$defs/acceptanceStage" },
         "status": { "$ref": "#/$defs/atomicClaimStatus" },
+        "required_observation": { "$ref": "#/$defs/observationCapability" },
+        "evaluation": { "$ref": "#/$defs/claimEvaluation" },
         "evidence_ids": { "$ref": "#/$defs/stringIdArray" },
         "finding_ids": { "$ref": "#/$defs/nonEmptyStringIdArray" },
         "provenance": { "$ref": "#/$defs/provenance" }
@@ -179,6 +224,8 @@
         "kind",
         "summary",
         "acceptance_stage",
+        "observation_method",
+        "observes",
         "claim_ids",
         "provenance"
       ],
@@ -195,6 +242,17 @@
         },
         "summary": { "$ref": "#/$defs/nonEmptyString" },
         "acceptance_stage": { "$ref": "#/$defs/acceptanceStage" },
+        "observation_method": { "$ref": "#/$defs/observationMethod" },
+        "observes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/observationCapability" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "execution_succeeded": { "type": "boolean" },
+        "command": { "$ref": "#/$defs/nonEmptyString" },
+        "observed_text": { "$ref": "#/$defs/nonEmptyString" },
+        "artifact_path": { "$ref": "#/$defs/nonEmptyString" },
         "claim_ids": { "$ref": "#/$defs/nonEmptyStringIdArray" },
         "provenance": { "$ref": "#/$defs/provenance" }
       }
