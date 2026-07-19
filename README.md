@@ -2,13 +2,49 @@
 
 Proofrail is an acceptance and evidence layer for AI-generated software changes.
 
-It determines whether delivered artifacts support an agent's completion claims and whether the submitted evidence actually verifies those claims.
+The current prototype runs locally against supported deterministic case directories. It loads the real case data, repository schema, and offline artifacts; evaluates atomic claims with the existing evidence-capability model; and emits stable JSON or Markdown without executing recorded commands or contacting external services.
 
-## Current status
+## Run the verifier
 
-Product definition and acceptance model only.
+Use the source package directly from the repository:
 
-Application development has not started.
+```sh
+export PYTHONPATH=src
+python3 -m proofrail_verifier verify tests/fixtures/001-partial-workflow-fix
+python3 -m proofrail_verifier verify tests/fixtures/002-incapable-validation-command
+```
+
+JSON is the default. Select a format or write the complete result atomically to a file:
+
+```sh
+python3 -m proofrail_verifier verify tests/fixtures/001-partial-workflow-fix --format json
+python3 -m proofrail_verifier verify tests/fixtures/002-incapable-validation-command --format markdown
+python3 -m proofrail_verifier verify tests/fixtures/001-partial-workflow-fix --format json --output result.json
+```
+
+JSON output is deterministic and machine-readable:
+
+```json
+{"case_id":"001-partial-workflow-fix","claims":[{"claim_id":"obsolete-lockfile-deleted","status":"verified"}],"overall_verdict":"partially_verified"}
+```
+
+The complete result includes findings, evidence references, provenance limitations, and source hashes. Markdown presents the same result as a report:
+
+```markdown
+# Proofrail case: 002-incapable-validation-command
+
+**Overall verdict:** `partially_verified`
+
+## Claim: page-renders-expected-text
+
+- Status: `unsupported`
+```
+
+## Proof boundary
+
+This is an offline deterministic prototype. It proves only what the supported case artifacts and structured evidence can establish; a recorded successful command is not treated as proof of the outcome it claimed to test.
+
+The CLI does not run recorded commands, contact a deployment or GitHub, render a browser DOM, authenticate external provenance, accept arbitrary case schemas, provide a web interface, or merge changes.
 
 ## Start here
 
