@@ -1,0 +1,15 @@
+name: Fixture CI
+
+on:
+  push:
+    paths:
+      - bun.lockb
+  pull_request:
+    paths:
+      - bun.lockb
+
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - run: "true"

@@ -1,0 +1,15 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -6 +6 @@
+-      - bun.lockb
++      - bun.lock
+@@ -9 +9 @@
+-      - bun.lockb
++      - bun.lock
+diff --git a/bun.lockb b/bun.lockb
+deleted file mode 100644
+--- a/bun.lockb
++++ /dev/null
+@@ -1 +0,0 @@
+-obsolete lockfile fixture
