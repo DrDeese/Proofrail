@@ -33,6 +33,7 @@ class ActionConfiguration:
     base: str | None = None
     head: str | None = None
     claim_file: Path | None = None
+    policy_file: Path | None = None
 
 
 def _required(environment: Mapping[str, str], name: str) -> str:
@@ -90,6 +91,12 @@ def _configuration(environment: Mapping[str, str]) -> ActionConfiguration:
         raise ActionUsageError("GITHUB_WORKSPACE is not a directory")
 
     case_value = _optional(environment, "INPUT_CASE_DIRECTORY")
+    policy_value = _optional(environment, "INPUT_POLICY_FILE")
+    policy_file = (
+        _workspace_path(workspace, policy_value, "policy-file")
+        if policy_value
+        else None
+    )
     git_values = {name: _optional(environment, name) for name in GIT_INPUTS}
     supplied_git = [name for name, value in git_values.items() if value]
     if case_value and supplied_git:
@@ -106,6 +113,7 @@ def _configuration(environment: Mapping[str, str]) -> ActionConfiguration:
             case_directory=_workspace_path(
                 workspace, case_value, "case-directory"
             ),
+            policy_file=policy_file,
         )
     if len(supplied_git) != len(GIT_INPUTS):
         if supplied_git:
@@ -130,6 +138,7 @@ def _configuration(environment: Mapping[str, str]) -> ActionConfiguration:
         claim_file=_workspace_path(
             workspace, git_values["INPUT_CLAIM_FILE"], "claim-file"
         ),
+        policy_file=policy_file,
     )
 
 
@@ -251,6 +260,17 @@ def main(environment: Mapping[str, str] | None = None) -> int:
     sys.path.insert(0, str(configuration.workspace / "src"))
     try:
         from proofrail_verifier.rendering import render_json, render_markdown
+        from proofrail_verifier.policy import (
+            PolicyEvaluationError,
+            PolicyInputError,
+            evaluate_policy,
+            load_policy,
+            validate_result,
+        )
+        from proofrail_verifier.policy_rendering import (
+            render_policy_json,
+            render_policy_markdown,
+        )
     except ImportError as error:
         print(f"proofrail action: verification failed: {error}", file=sys.stderr)
         return 4
@@ -288,13 +308,50 @@ def main(environment: Mapping[str, str] | None = None) -> int:
         print(f"proofrail action: verification failed: {error}", file=sys.stderr)
         return 4
 
+    policy_decision: dict[str, Any] | None = None
+    policy_json: str | None = None
+    policy_markdown: str | None = None
+    if configuration.policy_file is not None:
+        try:
+            validate_result(result)
+        except PolicyInputError as error:
+            print(f"proofrail action: verification failed: {error}", file=sys.stderr)
+            return 4
+        try:
+            policy = load_policy(configuration.policy_file)
+            policy_decision = evaluate_policy(result, policy)
+        except PolicyInputError as error:
+            print(f"proofrail action: invalid policy input: {error}", file=sys.stderr)
+            return 3
+        except PolicyEvaluationError as error:
+            print(f"proofrail action: policy evaluation failed: {error}", file=sys.stderr)
+            return 4
+        except (KeyError, TypeError, ValueError, UnicodeError) as error:
+            print(f"proofrail action: policy evaluation failed: {error}", file=sys.stderr)
+            return 4
+        try:
+            policy_json = render_policy_json(policy_decision)
+            policy_markdown = render_policy_markdown(policy_decision)
+        except (KeyError, TypeError, ValueError, UnicodeError) as error:
+            print(f"proofrail action: policy evaluation failed: {error}", file=sys.stderr)
+            return 4
+
     result_directory = configuration.workspace / ".proofrail" / "results"
     result_path = result_directory / f"{case_id}.json"
+    policy_result_path = result_directory / f"{case_id}.policy.json"
     relative_result_path = result_path.relative_to(configuration.workspace).as_posix()
+    relative_policy_result_path = policy_result_path.relative_to(
+        configuration.workspace
+    ).as_posix()
     try:
         resolved_result_path = result_path.resolve(strict=False)
+        resolved_policy_result_path = policy_result_path.resolve(strict=False)
         if not _inside(resolved_result_path, configuration.workspace):
             raise OSError("result path resolves outside GITHUB_WORKSPACE")
+        if policy_decision is not None and not _inside(
+            resolved_policy_result_path, configuration.workspace
+        ):
+            raise OSError("policy result path resolves outside GITHUB_WORKSPACE")
         metadata_candidates = (
             configuration.output_file.resolve(strict=False),
             configuration.summary_file.resolve(strict=False),
@@ -304,26 +361,61 @@ def main(environment: Mapping[str, str] | None = None) -> int:
                 raise OSError("refusing to write action metadata inside the selected source")
         if metadata_candidates[0] == metadata_candidates[1]:
             raise OSError("GITHUB_OUTPUT and GITHUB_STEP_SUMMARY must be different files")
-        if resolved_result_path in metadata_candidates:
+        result_candidates = {resolved_result_path}
+        if policy_decision is not None:
+            result_candidates.add(resolved_policy_result_path)
+        if any(candidate in metadata_candidates for candidate in result_candidates):
             raise OSError("action metadata path collides with the JSON result path")
         _metadata_destination(configuration.output_file, "GITHUB_OUTPUT")
         _metadata_destination(configuration.summary_file, "GITHUB_STEP_SUMMARY")
         if configuration.mode == "git-change" and result_path.exists():
             raise OSError("Git-change result path already exists; refusing to overwrite source")
+        if (
+            configuration.mode == "git-change"
+            and policy_decision is not None
+            and policy_result_path.exists()
+        ):
+            raise OSError(
+                "Git-change policy result path already exists; refusing to overwrite source"
+            )
         result_directory.mkdir(parents=True, exist_ok=True)
         _write_atomic(result_path, json_result)
-        _append(configuration.summary_file, markdown_result)
+        if policy_decision is not None:
+            assert policy_json is not None
+            _write_atomic(policy_result_path, policy_json)
+        combined_summary = markdown_result
+        if policy_decision is not None:
+            assert policy_markdown is not None
+            combined_summary += "\n" + policy_markdown
+        _append(configuration.summary_file, combined_summary)
         output_lines = (
             f"overall-verdict={_safe_output_value('overall-verdict', verdict)}\n"
             f"result-json-path={_safe_output_value('result-json-path', relative_result_path)}\n"
         )
+        if policy_decision is not None:
+            policy_accepted = "true" if policy_decision["accepted"] else "false"
+            output_lines += (
+                f"policy-accepted={_safe_output_value('policy-accepted', policy_accepted)}\n"
+                "policy-result-json-path="
+                f"{_safe_output_value('policy-result-json-path', relative_policy_result_path)}\n"
+            )
         _append(configuration.output_file, output_lines)
         sys.stdout.write(
             json_result if configuration.result_format == "json" else markdown_result
         )
+        if policy_decision is not None:
+            assert policy_json is not None
+            assert policy_markdown is not None
+            sys.stdout.write(
+                policy_json
+                if configuration.result_format == "json"
+                else policy_markdown
+            )
     except (OSError, UnicodeError) as error:
         print(f"proofrail action: output error: {error}", file=sys.stderr)
         return 5
+    if policy_decision is not None and not policy_decision["accepted"]:
+        return 1
     return 0
 
 

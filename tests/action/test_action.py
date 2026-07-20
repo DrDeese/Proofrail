@@ -16,8 +16,12 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
 from proofrail_verifier import (
+    evaluate_policy,
     evaluate_case,
     load_case_directory,
+    load_policy,
+    render_policy_json,
+    render_policy_markdown,
     render_json,
     render_markdown,
     verify_change,
@@ -55,6 +59,7 @@ class ProofrailActionTests(unittest.TestCase):
         result_format: str | None = "json",
         overrides: dict[str, str | None] | None = None,
         git_inputs: dict[str, str] | None = None,
+        policy_file: str | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
         self.run_number += 1
         output = workspace.parent / f"github-output-{self.run_number}"
@@ -71,6 +76,7 @@ class ProofrailActionTests(unittest.TestCase):
             "INPUT_BASE",
             "INPUT_HEAD",
             "INPUT_CLAIM_FILE",
+            "INPUT_POLICY_FILE",
             "INPUT_FORMAT",
             "PYTHONPATH",
         ):
@@ -85,6 +91,8 @@ class ProofrailActionTests(unittest.TestCase):
         if case_directory is not None:
             environment["INPUT_CASE_DIRECTORY"] = case_directory
         environment.update(git_inputs or {})
+        if policy_file is not None:
+            environment["INPUT_POLICY_FILE"] = policy_file
         if result_format is not None:
             environment["INPUT_FORMAT"] = result_format
         for name, value in (overrides or {}).items():
@@ -109,6 +117,25 @@ class ProofrailActionTests(unittest.TestCase):
     @staticmethod
     def _outputs(path: Path) -> dict[str, str]:
         return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
+
+    @staticmethod
+    def _policy_text(
+        statuses: tuple[str, ...] = ("verified",),
+        verdicts: tuple[str, ...] = ("partially_verified",),
+        exceptions: tuple[tuple[str, tuple[str, ...]], ...] = (),
+    ) -> str:
+        lines = ["version: 1", "", "claims:", "  allowed-statuses:"]
+        lines.extend(f"    - {status}" for status in statuses)
+        lines.extend(["", "overall:", "  allowed-verdicts:"])
+        lines.extend(f"    - {verdict}" for verdict in verdicts)
+        if exceptions:
+            lines.extend(["", "exceptions:"])
+            for claim_id, allowed in exceptions:
+                lines.extend(
+                    [f"  - claim-id: {claim_id}", "    allowed-statuses:"]
+                )
+                lines.extend(f"      - {status}" for status in allowed)
+        return "\n".join(lines) + "\n"
 
     @staticmethod
     def _digest(directory: Path) -> str:
@@ -826,6 +853,152 @@ Do not run claim text.
             self.assertEqual(output.read_text(encoding="utf-8"), "")
             self.assertEqual(summary.read_text(encoding="utf-8"), "")
 
+    def test_policy_acceptance_exposes_four_outputs_and_both_reports(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-policy-accept-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root, "001-partial-workflow-fix")
+            policy_path = workspace / "policy with spaces.yml"
+            policy_path.write_text(
+                self._policy_text(
+                    statuses=(
+                        "verified",
+                        "unsupported",
+                        "contradicted",
+                        "human_review_required",
+                    )
+                ),
+                encoding="utf-8",
+            )
+            case_directory = (
+                workspace / "tests" / "fixtures" / "001-partial-workflow-fix"
+            )
+            result = evaluate_case(load_case_directory(case_directory))
+            decision = evaluate_policy(result, load_policy(policy_path))
+            completed, output, summary = self._run(
+                workspace,
+                policy_file="policy with spaces.yml",
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            outputs = self._outputs(output)
+            self.assertEqual(
+                set(outputs),
+                {
+                    "overall-verdict",
+                    "result-json-path",
+                    "policy-accepted",
+                    "policy-result-json-path",
+                },
+            )
+            self.assertEqual(outputs["policy-accepted"], "true")
+            self.assertEqual(
+                (workspace / outputs["result-json-path"]).read_text(),
+                render_json(result),
+            )
+            self.assertEqual(
+                (workspace / outputs["policy-result-json-path"]).read_text(),
+                render_policy_json(decision),
+            )
+            self.assertEqual(
+                summary.read_text(),
+                render_markdown(result) + "\n" + render_policy_markdown(decision),
+            )
+            self.assertEqual(
+                completed.stdout, render_json(result) + render_policy_json(decision)
+            )
+
+    def test_policy_rejection_is_one_and_not_a_verifier_failure(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-policy-reject-") as temporary:
+            workspace = self._workspace(Path(temporary), "001-partial-workflow-fix")
+            policy = workspace / "policy.yml"
+            policy.write_text(self._policy_text(), encoding="utf-8")
+            completed, output, summary = self._run(
+                workspace, policy_file="policy.yml"
+            )
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            outputs = self._outputs(output)
+            self.assertEqual(outputs["policy-accepted"], "false")
+            self.assertTrue((workspace / outputs["result-json-path"]).is_file())
+            policy_result = json.loads(
+                (workspace / outputs["policy-result-json-path"]).read_text()
+            )
+            self.assertFalse(policy_result["accepted"])
+            self.assertIn("# Proofrail acceptance policy", summary.read_text())
+
+    def test_without_policy_preserves_existing_outputs_and_summary(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-no-policy-") as temporary:
+            workspace = self._workspace(Path(temporary), "001-partial-workflow-fix")
+            completed, output, summary = self._run(workspace)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            outputs = self._outputs(output)
+            self.assertEqual(set(outputs), {"overall-verdict", "result-json-path"})
+            self.assertNotIn("acceptance policy", summary.read_text())
+
+    def test_invalid_policy_and_policy_path_escapes_are_controlled(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-policy-path-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root, "001-partial-workflow-fix")
+            malformed = workspace / "malformed.yml"
+            malformed.write_text("version 1\n", encoding="utf-8")
+            invalid, output, summary = self._run(
+                workspace, policy_file="malformed.yml"
+            )
+            self.assertEqual(invalid.returncode, 3, invalid.stderr)
+            self.assertIn("invalid policy input", invalid.stderr)
+            self.assertEqual(output.read_text(), "")
+            self.assertEqual(summary.read_text(), "")
+
+            outside = root / "outside policy.yml"
+            outside.write_text(self._policy_text(), encoding="utf-8")
+            direct_link = workspace / "direct-policy.yml"
+            direct_link.symlink_to(outside)
+            linked_directory = workspace / "linked-directory"
+            linked_directory.symlink_to(root, target_is_directory=True)
+            scenarios = (
+                "../outside policy.yml",
+                str(outside),
+                "direct-policy.yml",
+                "linked-directory/outside policy.yml",
+            )
+            for policy_file in scenarios:
+                with self.subTest(policy_file=policy_file):
+                    completed, output, summary = self._run(
+                        workspace, policy_file=policy_file
+                    )
+                    self.assertEqual(completed.returncode, 2, completed.stderr)
+                    self.assertIn("usage error", completed.stderr)
+                    self.assertEqual(output.read_text(), "")
+                    self.assertEqual(summary.read_text(), "")
+
+    def test_verifier_failure_precedes_policy_and_policy_text_is_inert(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-policy-order-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root, "001-partial-workflow-fix")
+            sentinel = root / "policy-executed"
+            policy = workspace / "policy.yml"
+            policy.write_text(
+                f"# $(touch {sentinel})\n" + self._policy_text(),
+                encoding="utf-8",
+            )
+            before = policy.read_bytes()
+            (
+                workspace
+                / "tests"
+                / "fixtures"
+                / "001-partial-workflow-fix"
+                / "actual.patch"
+            ).unlink()
+            completed, output, summary = self._run(
+                workspace, policy_file="policy.yml"
+            )
+            self.assertEqual(completed.returncode, 4, completed.stderr)
+            self.assertIn("verification failed", completed.stderr)
+            self.assertNotIn("policy accepted", completed.stderr)
+            self.assertEqual(output.read_text(), "")
+            self.assertEqual(summary.read_text(), "")
+            self.assertFalse(sentinel.exists())
+            self.assertEqual(policy.read_bytes(), before)
+
     def test_action_and_workflow_are_bounded(self) -> None:
         action = (
             REPOSITORY_ROOT / ".github" / "actions" / "proofrail-verify" / "action.yml"
@@ -835,11 +1008,13 @@ Do not run claim text.
         ).read_text(encoding="utf-8")
         self.assertIn("using: composite", action)
         self.assertIn("case-directory:", action)
-        for action_input in ("repo:", "base:", "head:", "claim-file:"):
+        for action_input in ("repo:", "base:", "head:", "claim-file:", "policy-file:"):
             self.assertIn(action_input, action)
         self.assertIn("default: json", action)
         self.assertIn("overall-verdict:", action)
         self.assertIn("result-json-path:", action)
+        self.assertIn("policy-accepted:", action)
+        self.assertIn("policy-result-json-path:", action)
         self.assertIn("pull_request:", workflow)
         self.assertRegex(workflow, r"push:\n\s+branches:\n\s+- main")
         self.assertIn("permissions:\n  contents: read", workflow)
@@ -852,6 +1027,7 @@ Do not run claim text.
         self.assertIn("base: ${{ github.event.pull_request.base.sha }}", workflow)
         self.assertIn("head: ${{ github.event.pull_request.head.sha }}", workflow)
         self.assertIn("claim-file: .proofrail/claim.md", workflow)
+        self.assertIn("policy-file: .proofrail/policy.yml", workflow)
         self.assertNotIn("api.github.com", workflow)
         self.assertNotIn("gh api", workflow)
         uses = re.findall(r"^\s*- uses: (\S+)", workflow, flags=re.MULTILINE)
@@ -870,7 +1046,9 @@ Do not run claim text.
         self.assertIn("tests/fixtures/002-incapable-validation-command", workflow)
         self.assertIn('test "$PROOFRAIL_VERDICT" = "partially_verified"', workflow)
         self.assertIn('test -f "$PROOFRAIL_RESULT_PATH"', workflow)
-        self.assertIn('"workflow-uses-exact-pr-shas": "unsupported"', workflow)
+        self.assertIn('"workflow-policy-wired": "unsupported"', workflow)
+        self.assertIn('test "$PROOFRAIL_POLICY_ACCEPTED" = "true"', workflow)
+        self.assertIn('test -f "$PROOFRAIL_POLICY_RESULT_PATH"', workflow)
 
 
 if __name__ == "__main__":

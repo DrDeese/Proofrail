@@ -17,6 +17,9 @@ inputs:
   claim-file:
     description: Workspace-relative explicit Proofrail completion-claim file
     required: false
+  policy-file:
+    description: Optional workspace-relative bounded Proofrail acceptance policy
+    required: false
   format:
     description: Result format printed to the action log (json or markdown)
     required: false
@@ -29,6 +32,12 @@ outputs:
   result-json-path:
     description: Workspace-relative path to the deterministic JSON result
     value: ${{ steps.verify.outputs.result-json-path }}
+  policy-accepted:
+    description: Whether the optional acceptance policy accepted the completed result
+    value: ${{ steps.verify.outputs.policy-accepted }}
+  policy-result-json-path:
+    description: Workspace-relative path to the deterministic policy result
+    value: ${{ steps.verify.outputs.policy-result-json-path }}
 
 runs:
   using: composite
@@ -41,5 +50,6 @@ runs:
         INPUT_BASE: ${{ inputs.base }}
         INPUT_HEAD: ${{ inputs.head }}
         INPUT_CLAIM_FILE: ${{ inputs.claim-file }}
+        INPUT_POLICY_FILE: ${{ inputs.policy-file }}
         INPUT_FORMAT: ${{ inputs.format }}
       run: python3 "$GITHUB_ACTION_PATH/run.py"

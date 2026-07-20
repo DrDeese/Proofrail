@@ -19,6 +19,16 @@ from .preparation import (
     PreparationFailure,
     prepare_case,
 )
+from .policy import (
+    PolicyEvaluationError,
+    PolicyInputError,
+    PolicyOutputError,
+    evaluate_policy,
+    load_policy,
+    load_result,
+    write_new_atomic,
+)
+from .policy_rendering import render_policy_json, render_policy_markdown
 from .rendering import render_json, render_markdown
 
 
@@ -47,6 +57,14 @@ def _parser() -> argparse.ArgumentParser:
     change.add_argument("--format", choices=("json", "markdown"), default="json")
     change.add_argument("--output", type=Path)
     change.add_argument("--keep-case", type=Path)
+    change.add_argument("--policy", type=Path)
+    enforce = commands.add_parser(
+        "enforce", help="evaluate an acceptance policy against a completed result"
+    )
+    enforce.add_argument("--result", type=Path, required=True)
+    enforce.add_argument("--policy", type=Path, required=True)
+    enforce.add_argument("--format", choices=("json", "markdown"), default="json")
+    enforce.add_argument("--output", type=Path)
     return parser
 
 
@@ -148,7 +166,7 @@ def _verify_change(arguments: argparse.Namespace) -> int:
             arguments.head,
             arguments.claim_file,
             result_format=arguments.format,
-            output=arguments.output,
+            output=arguments.output if arguments.policy is None else None,
             keep_case=arguments.keep_case,
         )
     except InvalidPreparationInput as error:
@@ -163,13 +181,77 @@ def _verify_change(arguments: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print("proofrail: change verification failed: interrupted", file=sys.stderr)
         return 4
+    if arguments.policy is None:
+        try:
+            if arguments.output is None:
+                sys.stdout.write(completed.rendered)
+        except (OSError, UnicodeError) as error:
+            print(f"proofrail: output write failed: {error}", file=sys.stderr)
+            return 5
+        return 0
+    return _evaluate_and_publish_policy(
+        completed.result,
+        arguments.policy,
+        arguments.format,
+        arguments.output,
+        protected=(arguments.policy,),
+    )
+
+
+def _evaluate_and_publish_policy(
+    result: dict[str, object],
+    policy_path: Path,
+    result_format: str,
+    output: Path | None,
+    *,
+    protected: tuple[Path, ...],
+) -> int:
     try:
-        if arguments.output is None:
-            sys.stdout.write(completed.rendered)
-    except (OSError, UnicodeError) as error:
+        policy = load_policy(policy_path)
+        decision = evaluate_policy(result, policy)
+    except PolicyInputError as error:
+        print(f"proofrail: invalid policy input: {error}", file=sys.stderr)
+        return 3
+    except PolicyEvaluationError as error:
+        print(f"proofrail: policy evaluation failed: {error}", file=sys.stderr)
+        return 4
+    except (KeyError, TypeError, ValueError, UnicodeError) as error:
+        print(f"proofrail: policy evaluation failed: {error}", file=sys.stderr)
+        return 4
+
+    try:
+        rendered = (
+            render_policy_json(decision)
+            if result_format == "json"
+            else render_policy_markdown(decision)
+        )
+    except (KeyError, TypeError, ValueError, UnicodeError) as error:
+        print(f"proofrail: policy evaluation failed: {error}", file=sys.stderr)
+        return 4
+    try:
+        if output is None:
+            sys.stdout.write(rendered)
+        else:
+            write_new_atomic(output, rendered, protected)
+    except (PolicyOutputError, OSError, UnicodeError) as error:
         print(f"proofrail: output write failed: {error}", file=sys.stderr)
         return 5
-    return 0
+    return 0 if decision["accepted"] else 1
+
+
+def _enforce(arguments: argparse.Namespace) -> int:
+    try:
+        result = load_result(arguments.result)
+    except PolicyInputError as error:
+        print(f"proofrail: invalid policy input: {error}", file=sys.stderr)
+        return 3
+    return _evaluate_and_publish_policy(
+        result,
+        arguments.policy,
+        arguments.format,
+        arguments.output,
+        protected=(arguments.result, arguments.policy),
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -178,4 +260,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _prepare(arguments)
     if arguments.command == "verify-change":
         return _verify_change(arguments)
+    if arguments.command == "enforce":
+        return _enforce(arguments)
     return _verify(arguments)
