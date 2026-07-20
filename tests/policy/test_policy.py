@@ -184,17 +184,18 @@ class AcceptancePolicyTests(unittest.TestCase):
             self.assertEqual(rejected.returncode, 1, rejected.stderr)
             self.assertFalse(json.loads(rejected.stdout)["accepted"])
 
-    def test_dogfood_policy_rejects_contradicted_claim(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="proofrail-policy-contradicted-") as temporary:
+    def test_dogfood_policy_rejects_unsupported_contradicted_and_partial(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-policy-strict-") as temporary:
             root = Path(temporary)
             result, _ = self._write_inputs(
                 root,
                 self._result(
                     (
-                        ("workflow-policy-wired", "unsupported"),
-                        ("unexpected-contradiction", "contradicted"),
+                        ("verified-change", "verified"),
+                        ("unsupported-change", "unsupported"),
+                        ("contradicted-change", "contradicted"),
                     ),
-                    "partially_verified",
+                    "verified",
                 ),
             )
             completed = self._run(result, REPOSITORY_ROOT / ".proofrail" / "policy.yml")
@@ -203,7 +204,46 @@ class AcceptancePolicyTests(unittest.TestCase):
             self.assertFalse(decision["accepted"])
             self.assertEqual(
                 decision["reasons"],
-                ["claim unexpected-contradiction has disallowed status contradicted"],
+                [
+                    "claim unsupported-change has disallowed status unsupported",
+                    "claim contradicted-change has disallowed status contradicted",
+                ],
+            )
+            self.assertTrue(decision["claim_decisions"][0]["accepted"])
+            self.assertFalse(decision["claim_decisions"][1]["accepted"])
+            self.assertFalse(decision["claim_decisions"][2]["accepted"])
+
+            result.write_text(
+                json.dumps(self._result((("verified-change", "verified"),), "partially_verified")),
+                encoding="utf-8",
+            )
+            partial = self._run(result, REPOSITORY_ROOT / ".proofrail" / "policy.yml")
+            self.assertEqual(partial.returncode, 1, partial.stderr)
+            self.assertEqual(
+                json.loads(partial.stdout)["reasons"],
+                ["overall verdict partially_verified is disallowed"],
+            )
+
+    def test_step12_policy_accepts_verified_claims_without_exception(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-policy-step12-") as temporary:
+            root = Path(temporary)
+            result, _ = self._write_inputs(
+                root,
+                self._result(
+                    tuple((f"step12-path-{index}", "verified") for index in range(10)),
+                    "verified",
+                ),
+            )
+            completed = self._run(result, REPOSITORY_ROOT / ".proofrail" / "policy.yml")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            decision = json.loads(completed.stdout)
+            self.assertTrue(decision["accepted"])
+            self.assertEqual(decision["reasons"], [])
+            self.assertTrue(
+                all(
+                    item["rule"] == "claims.allowed-statuses"
+                    for item in decision["claim_decisions"]
+                )
             )
 
     def test_multiple_reasons_are_stable_and_deterministic(self) -> None:

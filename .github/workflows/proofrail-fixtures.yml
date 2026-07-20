@@ -76,7 +76,7 @@ jobs:
           PROOFRAIL_POLICY_ACCEPTED: ${{ steps.proofrail.outputs.policy-accepted }}
           PROOFRAIL_POLICY_RESULT_PATH: ${{ steps.proofrail.outputs.policy-result-json-path }}
         run: |
-          test "$PROOFRAIL_VERDICT" = "partially_verified"
+          test "$PROOFRAIL_VERDICT" = "verified"
           test -f "$PROOFRAIL_RESULT_PATH"
           test "$PROOFRAIL_POLICY_ACCEPTED" = "true"
           test -f "$PROOFRAIL_POLICY_RESULT_PATH"
@@ -88,13 +88,16 @@ jobs:
               result = json.load(source)
           statuses = {claim["claim_id"]: claim["status"] for claim in result["claims"]}
           expected = {
-              "policy-module-added": "verified",
-              "policy-tests-added": "verified",
-              "action-metadata-modified": "verified",
-              "action-wrapper-modified": "verified",
-              "workflow-policy-wired": "unsupported",
-              "policy-file-added": "verified",
-              "readme-modified": "verified",
+              "proofrail-claim-md-modified": "verified",
+              "proofrail-policy-yml-modified": "verified",
+              "readme-md-modified": "verified",
+              "src-proofrail-verifier-init-py-modified": "verified",
+              "src-proofrail-verifier-claim-drafting-py-added": "verified",
+              "src-proofrail-verifier-cli-py-modified": "verified",
+              "src-proofrail-verifier-git-source-py-modified": "verified",
+              "tests-claim-drafting-test-draft-claims-py-added": "verified",
+              "tests-end-to-end-test-draft-claims-action-py-added": "verified",
+              "tests-policy-test-policy-py-modified": "verified",
           }
           if statuses != expected:
               raise SystemExit(f"unexpected Proofrail statuses: {statuses!r}")
@@ -107,8 +110,15 @@ jobs:
           }
           if not all(decision["accepted"] for decision in decisions.values()):
               raise SystemExit(f"unexpected rejected claim decision: {decisions!r}")
-          if decisions["workflow-policy-wired"]["rule"] != (
-              "exceptions.workflow-policy-wired.allowed-statuses"
+          if set(decisions) != set(expected):
+              raise SystemExit(f"unexpected Proofrail policy decisions: {decisions!r}")
+          if not all(
+              decision["rule"] == "claims.allowed-statuses"
+              for decision in decisions.values()
           ):
-              raise SystemExit("semantic workflow claim did not use its exact exception")
+              raise SystemExit(f"unexpected Proofrail exception rule: {decisions!r}")
+          if policy["overall_decision"] != {"accepted": True, "verdict": "verified"}:
+              raise SystemExit(f"unexpected overall policy decision: {policy!r}")
+          if policy["reasons"]:
+              raise SystemExit(f"unexpected Proofrail policy reasons: {policy!r}")
           PY

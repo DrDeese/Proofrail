@@ -126,10 +126,27 @@ def validate_range(repository: Path, base_sha: str, head_sha: str) -> None:
         raise InvalidPreparationInput("base commit is not an ancestor of head commit")
 
 
+def validate_commit_trees(repository: Path, base_sha: str, head_sha: str) -> None:
+    """Require both committed trees to be locally available without lazy fetching."""
+
+    for label, sha in (("base", base_sha), ("head", head_sha)):
+        _git(repository, ["cat-file", "-e", f"{sha}^{{tree}}"], invalid=True)
+
+
 def changed_paths(repository: Path, base_sha: str, head_sha: str) -> list[dict[str, str]]:
     _, output = _git(
         repository,
-        ["diff", "--name-status", "-z", "--no-renames", base_sha, head_sha, "--"],
+        [
+            "diff",
+            "--name-status",
+            "-z",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-renames",
+            base_sha,
+            head_sha,
+            "--",
+        ],
     )
     tokens = output.split(b"\0")
     if tokens and tokens[-1] == b"":
