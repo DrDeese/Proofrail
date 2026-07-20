@@ -1205,8 +1205,8 @@ The committed path change is covered.
         )
         self.assertIn("tests/fixtures/001-partial-workflow-fix", workflow)
         self.assertIn("tests/fixtures/002-incapable-validation-command", workflow)
-        contract_path = REPOSITORY_ROOT / "contracts" / "step-14.yml"
-        self.assertIn("contracts/step-14.yml", workflow)
+        contract_path = REPOSITORY_ROOT / "contracts" / "step-15.yml"
+        self.assertIn("contracts/step-15.yml", workflow)
         preflight = runpy.run_path(
             str(REPOSITORY_ROOT / "scripts" / "proofrail_step_preflight.py")
         )
@@ -1221,7 +1221,7 @@ The committed path change is covered.
         contract = preflight["validate_contract"](raw_contract, schema)
         reason, offending = preflight["validate_contract_source"](
             contract,
-            "contracts/step-14.yml",
+            "contracts/step-15.yml",
             preflight["parse_bounded_yaml"](workflow, contract=False),
             workflow,
             (REPOSITORY_ROOT / "scripts" / "proofrail_step_preflight.py").read_text(

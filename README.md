@@ -206,7 +206,13 @@ The command exits `0` whenever preparation and verification complete, including 
 
 ## Run a numbered-step preflight
 
-Use the `proofrail-autonomous-step` skill to implement, verify, review, repair, and—when its bounded authorization permits—commit a step. Use the more restrictive `proofrail-step-preflight` skill after implementation and before staging to run a read-only, fail-closed gate from an exact caller-provided contract.
+Use the three repository-local skills as a bounded sequence:
+
+1. `proofrail-autonomous-step` implements, verifies, reviews, and repairs a fully authorized step, then commits only when the step explicitly permits it.
+2. `proofrail-step-preflight` runs the deterministic, read-only pre-commit gate using the exact contract supplied by the caller.
+3. `proofrail-scope-escalation` stops at a proven out-of-scope dependency and emits its fixed `SCOPE HALT` report before any out-of-scope edit or weakening workaround.
+
+Scope escalation grants no authority by itself. A human reply of `approved` authorizes only the exact paths and minimal changes named in that halt report; every other edit, repair, commit, push, pull request, permission change, approved-action change, deployment, or merge still requires its own authority.
 
 Contracts are named `contracts/step-<number>.yml`; there is no implicit current contract. Invoke the gate with the exact contract and a new repository-relative report path:
 
