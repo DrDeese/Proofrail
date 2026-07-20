@@ -2,6 +2,7 @@
 
 from .evaluation import evaluate_case, evaluate_fixture_001
 from .loading import load_case, load_case_directory, load_fixture_001
+from .preparation import prepare_case
 from .rendering import render_json, render_markdown
 
 __all__ = [
@@ -10,6 +11,7 @@ __all__ = [
     "load_case",
     "load_case_directory",
     "load_fixture_001",
+    "prepare_case",
     "render_json",
     "render_markdown",
 ]

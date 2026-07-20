@@ -96,6 +96,85 @@ def _finding(
     }
 
 
+PATH_CHANGES = {"added", "modified", "deleted", "present", "absent"}
+
+
+def _canonical_path_statement(path: str, expected_change: str) -> str:
+    if expected_change in {"added", "modified", "deleted"}:
+        return f"{path} was {expected_change}."
+    return f"{path} is {expected_change}."
+
+
+def _prepared_change_for_claim(case: dict[str, Any], claim: dict[str, Any]) -> str | None:
+    marker = f"claim:{claim['id']}"
+    matches = [
+        item
+        for item in case.get("requested_change", {}).get("required_artifact_changes", [])
+        if item.get("location") == marker
+    ]
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise VerificationError(f"prepared claim {claim['id']!r} has ambiguous path expectation")
+    item = matches[0]
+    path = claim.get("evaluation", {}).get("path")
+    expected_change = item.get("change")
+    if item.get("path") != path or expected_change not in PATH_CHANGES:
+        raise VerificationError(f"prepared claim {claim['id']!r} has invalid path expectation")
+    return expected_change
+
+
+def _evaluate_prepared_path_claim(
+    claim: dict[str, Any],
+    expected_change: str,
+    evidence: dict[str, dict[str, Any]],
+    state: ArtifactState,
+) -> dict[str, Any]:
+    path = claim["evaluation"]["path"]
+    base_present = path in state.initial_files
+    head_present = path in state.final_files
+    change_type = state.change_types.get(path)
+    facts = {
+        "added": not base_present and head_present and change_type == "added",
+        "modified": (
+            base_present
+            and head_present
+            and change_type == "modified"
+            and state.initial_contents.get(path) != state.final_files.get(path)
+        ),
+        "deleted": base_present and not head_present and change_type == "deleted",
+        "present": head_present,
+        "absent": not head_present,
+    }
+    if not facts[expected_change]:
+        return _finding(
+            claim,
+            "contradicted",
+            f"The committed trees contradict the expected {expected_change} state for {path}.",
+            evidence,
+        )
+    if not _capable_evidence(claim, evidence):
+        return _finding(
+            claim,
+            "unsupported",
+            f"No capable Git artifact evidence observes {path}.",
+            evidence,
+        )
+    if claim.get("statement", "").strip() != _canonical_path_statement(path, expected_change):
+        return _finding(
+            claim,
+            "unsupported",
+            f"Git proves only that {path} is {expected_change}; the broader human wording was not interpreted.",
+            evidence,
+        )
+    return _finding(
+        claim,
+        "verified",
+        f"The committed trees verify that {path} is {expected_change}.",
+        evidence,
+    )
+
+
 def _evaluate_claim(
     claim: dict[str, Any], evidence: dict[str, dict[str, Any]], state: ArtifactState
 ) -> dict[str, Any]:
@@ -186,7 +265,19 @@ def evaluate_case(bundle: FixtureBundle) -> dict[str, Any]:
     evidence = _index(bundle.case["evidence"], "evidence")
     _validate_relationships(claims, evidence)
     state = inspect_actual_state(bundle.fixture_dir)
-    results = [_evaluate_claim(claim, evidence, state) for claim in claims.values()]
+    results: list[dict[str, Any]] = []
+    for claim in claims.values():
+        prepared_change = (
+            _prepared_change_for_claim(bundle.case, claim)
+            if state.source_kind == "prepared_git_range"
+            else None
+        )
+        if prepared_change is None:
+            results.append(_evaluate_claim(claim, evidence, state))
+        else:
+            results.append(
+                _evaluate_prepared_path_claim(claim, prepared_change, evidence, state)
+            )
     limitations: list[str] = []
     for result in results:
         for limitation in result["provenance_limitations"]:

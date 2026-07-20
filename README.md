@@ -60,6 +60,39 @@ This is an offline deterministic prototype. It proves only what the supported ca
 
 The CLI does not run recorded commands, contact a deployment or GitHub, render a browser DOM, authenticate external provenance, accept arbitrary case schemas, provide a web interface, or merge changes.
 
+## Prepare a case from local Git
+
+`prepare-case` converts an explicit completion-claim file and two local commit refs into a self-contained case directory. It reads committed trees with Git plumbing, never reads working-tree files as evidence, and does not execute repository hooks, scripts, or claim text.
+
+```sh
+export PYTHONPATH=src
+python3 -m proofrail_verifier prepare-case \
+  --repo tests/source_repositories/partial-workflow-fix \
+  --base HEAD^ \
+  --head HEAD \
+  --claim-file tests/case_preparation/claims/partial-workflow-fix.md \
+  --output-dir /tmp/generated-case
+```
+
+The claim file is deliberately strict:
+
+```markdown
+# Completion claim
+
+The requested local change is complete.
+
+## Atomic claims
+
+- id: example-file-deleted
+  statement: example.txt was deleted.
+  expected-path: example.txt
+  expected-change: deleted
+```
+
+Supported structured changes are `added`, `modified`, `deleted`, `present`, and `absent`. A statement can be marked `verified` only when it exactly states its structured path fact, such as `example.txt was deleted.`; broader human wording is preserved but remains `unsupported` when Git proves only the path predicate. Git may still contradict broader wording when a necessary expected path change is absent.
+
+The generated directory contains `case.json`, committed base/head artifacts for claim-relevant paths, changed-file and commit metadata, the exact binary-capable Git patch, the verbatim claim source, and an exact schema snapshot. Preparation refuses existing output directories and output paths inside the source repository, builds in a sibling temporary directory, and publishes only a complete case. Commit identities are recorded but not externally authenticated, and the command does not infer test, deployment, workflow-run, browser, merge, or other external outcomes.
+
 ## Start here
 
 1. Read `PRODUCT.md`.

@@ -12,6 +12,12 @@ from typing import Sequence
 from .artifacts import ArtifactInspectionError
 from .evaluation import VerificationError, evaluate_case
 from .loading import FixtureLoadError, load_case_directory
+from .preparation import (
+    InvalidPreparationInput,
+    OutputWriteFailure,
+    PreparationFailure,
+    prepare_case,
+)
 from .rendering import render_json, render_markdown
 
 
@@ -22,6 +28,14 @@ def _parser() -> argparse.ArgumentParser:
     verify.add_argument("case_directory", type=Path)
     verify.add_argument("--format", choices=("json", "markdown"), default="json")
     verify.add_argument("--output", type=Path)
+    prepare = commands.add_parser(
+        "prepare-case", help="prepare a case from a local committed Git range"
+    )
+    prepare.add_argument("--repo", type=Path, required=True)
+    prepare.add_argument("--base", required=True)
+    prepare.add_argument("--head", required=True)
+    prepare.add_argument("--claim-file", type=Path, required=True)
+    prepare.add_argument("--output-dir", type=Path, required=True)
     return parser
 
 
@@ -60,8 +74,7 @@ def write_atomic(path: Path, content: str, case_directory: Path) -> None:
                 pass
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    arguments = _parser().parse_args(argv)
+def _verify(arguments: argparse.Namespace) -> int:
     try:
         bundle = load_case_directory(arguments.case_directory)
     except FixtureLoadError as error:
@@ -87,3 +100,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"proofrail: output write failed: {error}", file=sys.stderr)
         return 5
     return 0
+
+
+def _prepare(arguments: argparse.Namespace) -> int:
+    try:
+        result = prepare_case(
+            arguments.repo,
+            arguments.base,
+            arguments.head,
+            arguments.claim_file,
+            arguments.output_dir,
+        )
+    except InvalidPreparationInput as error:
+        print(f"proofrail: invalid preparation input: {error}", file=sys.stderr)
+        return 3
+    except PreparationFailure as error:
+        print(f"proofrail: preparation failed: {error}", file=sys.stderr)
+        return 4
+    except OutputWriteFailure as error:
+        print(f"proofrail: output write failed: {error}", file=sys.stderr)
+        return 5
+    print(f"case id: {result.case_id}")
+    print(f"base sha: {result.base_sha}")
+    print(f"head sha: {result.head_sha}")
+    print(f"output directory: {arguments.output_dir}")
+    print(f"atomic claims: {result.claim_count}")
+    print(f"changed paths: {result.changed_path_count}")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    arguments = _parser().parse_args(argv)
+    if arguments.command == "prepare-case":
+        return _prepare(arguments)
+    return _verify(arguments)

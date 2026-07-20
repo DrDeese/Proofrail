@@ -1,9 +1,11 @@
-"""Reconstruct fixture 001's final file state from its initial tree and patch."""
+"""Inspect deterministic fixture and prepared-case artifact state."""
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 
 
@@ -16,6 +18,9 @@ class ArtifactState:
     initial_files: frozenset[str]
     final_files: dict[str, str]
     changed_paths: tuple[str, ...]
+    initial_contents: dict[str, str] = field(default_factory=dict)
+    change_types: dict[str, str] = field(default_factory=dict)
+    source_kind: str = "fixture"
 
 
 DIFF_HEADER = re.compile(r"^diff --git a/(.+) b/(.+)$")
@@ -23,10 +28,48 @@ DIFF_HEADER = re.compile(r"^diff --git a/(.+) b/(.+)$")
 
 def _read_initial_files(initial_dir: Path) -> dict[str, str]:
     return {
-        path.relative_to(initial_dir).as_posix(): path.read_text(encoding="utf-8")
+        path.relative_to(initial_dir).as_posix(): path.read_bytes().decode(
+            "utf-8", errors="surrogateescape"
+        )
         for path in sorted(initial_dir.rglob("*"))
         if path.is_file()
     }
+
+
+def _prepared_state(fixture_dir: Path) -> ArtifactState:
+    artifact_dir = fixture_dir / "artifacts"
+    base = _read_initial_files(artifact_dir / "base")
+    head = _read_initial_files(artifact_dir / "head")
+    changed_path = fixture_dir / "git" / "changed-files.json"
+    try:
+        changed_document = json.loads(changed_path.read_text(encoding="utf-8"))
+        entries = changed_document["paths"]
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ArtifactInspectionError(f"invalid prepared changed-file evidence: {error}") from error
+    if not isinstance(entries, list):
+        raise ArtifactInspectionError("prepared changed-file evidence paths must be an array")
+    change_types: dict[str, str] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ArtifactInspectionError("prepared changed-file entry must be an object")
+        path = entry.get("path")
+        status = entry.get("status")
+        if (
+            not isinstance(path, str)
+            or not path
+            or status not in {"added", "modified", "deleted"}
+            or path in change_types
+        ):
+            raise ArtifactInspectionError("prepared changed-file entry is invalid or duplicate")
+        change_types[path] = status
+    return ArtifactState(
+        initial_files=frozenset(base),
+        final_files=head,
+        changed_paths=tuple(sorted(change_types)),
+        initial_contents=base,
+        change_types=change_types,
+        source_kind="prepared_git_range",
+    )
 
 
 def _patch_blocks(patch_text: str) -> list[tuple[str, list[str]]]:
@@ -77,12 +120,15 @@ def _apply_block(files: dict[str, str], path: str, lines: list[str]) -> None:
 
 def inspect_actual_state(fixture_dir: Path) -> ArtifactState:
     artifact_dir = fixture_dir / "artifacts"
+    if (artifact_dir / "base").is_dir() and (artifact_dir / "head").is_dir():
+        return _prepared_state(fixture_dir)
     if artifact_dir.is_dir():
         files = _read_initial_files(artifact_dir)
         return ArtifactState(
             initial_files=frozenset(files),
             final_files=files,
             changed_paths=tuple(sorted(files)),
+            initial_contents=dict(files),
         )
     initial = _read_initial_files(fixture_dir / "initial")
     final = dict(initial)
@@ -94,6 +140,7 @@ def inspect_actual_state(fixture_dir: Path) -> ArtifactState:
         initial_files=frozenset(initial),
         final_files=final,
         changed_paths=tuple(sorted(path for path, _ in blocks)),
+        initial_contents=initial,
     )
 
 

@@ -63,9 +63,11 @@ def _validate_case_structure(case: dict[str, Any]) -> None:
             raise FixtureLoadError(f"evidence at index {index} has invalid structure")
 
 
-def _load_bundle(root: Path, fixture_dir: Path) -> FixtureBundle:
+def _load_bundle(
+    root: Path, fixture_dir: Path, schema_path: Path | None = None
+) -> FixtureBundle:
     case_path = fixture_dir / "case.json"
-    schema_path = root / "schemas" / "case.schema.json"
+    schema_path = schema_path or root / "schemas" / "case.schema.json"
     case, case_sha256 = _load_json(case_path)
     schema, schema_sha256 = _load_json(schema_path)
 
@@ -80,7 +82,7 @@ def _load_bundle(root: Path, fixture_dir: Path) -> FixtureBundle:
     except SchemaValidationError as error:
         raise FixtureLoadError(f"case does not satisfy schema: {error}") from error
     _validate_case_structure(case)
-    if case["id"] != fixture_dir.name:
+    if schema_path.parent.name == "schemas" and case["id"] != fixture_dir.name:
         raise FixtureLoadError("fixture directory and case id differ")
 
     return FixtureBundle(
@@ -103,6 +105,9 @@ def load_case_directory(case_directory: Path) -> FixtureBundle:
     fixture_dir = case_directory.resolve()
     if not fixture_dir.is_dir():
         raise FixtureLoadError(f"case directory does not exist: {case_directory}")
+    self_contained_schema = fixture_dir / "schema" / "case.schema.json"
+    if self_contained_schema.is_file():
+        return _load_bundle(fixture_dir, fixture_dir, self_contained_schema)
     root = next(
         (
             candidate
