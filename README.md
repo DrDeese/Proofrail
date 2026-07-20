@@ -93,6 +93,23 @@ Supported structured changes are `added`, `modified`, `deleted`, `present`, and 
 
 The generated directory contains `case.json`, committed base/head artifacts for claim-relevant paths, changed-file and commit metadata, the exact binary-capable Git patch, the verbatim claim source, and an exact schema snapshot. Preparation refuses existing output directories and output paths inside the source repository, builds in a sibling temporary directory, and publishes only a complete case. Commit identities are recorded but not externally authenticated, and the command does not infer test, deployment, workflow-run, browser, merge, or other external outcomes.
 
+## Verify a local Git change end to end
+
+`verify-change` composes the same case preparation and verifier in one offline command. The generated case lives in a secure temporary directory and is removed after verification unless `--keep-case` names a new destination outside the source repository.
+
+```sh
+export PYTHONPATH=src
+python3 -m proofrail_verifier verify-change \
+  --repo tests/source_repositories/partial-workflow-fix \
+  --base HEAD^ \
+  --head HEAD \
+  --claim-file tests/case_preparation/claims/partial-workflow-fix.md
+```
+
+JSON is the default; `--format markdown` renders the same result as Markdown. `--output result.json` atomically writes the rendered result instead of stdout, and `--keep-case generated-case` atomically preserves a self-contained case that can later be passed to `proofrail_verifier verify`. Both destinations must be new paths outside the source repository.
+
+The command exits `0` whenever preparation and verification complete, including contradicted, unsupported, or partially verified verdicts. Invalid repository, ref, claim, or generated-schema input exits `3`; preparation or verification failure exits `4`; destination publication failure exits `5`; command-line usage errors exit `2`.
+
 ## Start here
 
 1. Read `PRODUCT.md`.

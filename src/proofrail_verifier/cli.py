@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .artifacts import ArtifactInspectionError
+from .change_verification import verify_change
 from .evaluation import VerificationError, evaluate_case
 from .loading import FixtureLoadError, load_case_directory
 from .preparation import (
@@ -36,6 +37,16 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--head", required=True)
     prepare.add_argument("--claim-file", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, required=True)
+    change = commands.add_parser(
+        "verify-change", help="prepare and verify a local committed Git range"
+    )
+    change.add_argument("--repo", type=Path, required=True)
+    change.add_argument("--base", required=True)
+    change.add_argument("--head", required=True)
+    change.add_argument("--claim-file", type=Path, required=True)
+    change.add_argument("--format", choices=("json", "markdown"), default="json")
+    change.add_argument("--output", type=Path)
+    change.add_argument("--keep-case", type=Path)
     return parser
 
 
@@ -96,7 +107,7 @@ def _verify(arguments: argparse.Namespace) -> int:
             sys.stdout.write(rendered)
         else:
             write_atomic(arguments.output, rendered, bundle.fixture_dir)
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         print(f"proofrail: output write failed: {error}", file=sys.stderr)
         return 5
     return 0
@@ -129,8 +140,42 @@ def _prepare(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _verify_change(arguments: argparse.Namespace) -> int:
+    try:
+        completed = verify_change(
+            arguments.repo,
+            arguments.base,
+            arguments.head,
+            arguments.claim_file,
+            result_format=arguments.format,
+            output=arguments.output,
+            keep_case=arguments.keep_case,
+        )
+    except InvalidPreparationInput as error:
+        print(f"proofrail: invalid change input: {error}", file=sys.stderr)
+        return 3
+    except PreparationFailure as error:
+        print(f"proofrail: change verification failed: {error}", file=sys.stderr)
+        return 4
+    except OutputWriteFailure as error:
+        print(f"proofrail: output write failed: {error}", file=sys.stderr)
+        return 5
+    except KeyboardInterrupt:
+        print("proofrail: change verification failed: interrupted", file=sys.stderr)
+        return 4
+    try:
+        if arguments.output is None:
+            sys.stdout.write(completed.rendered)
+    except (OSError, UnicodeError) as error:
+        print(f"proofrail: output write failed: {error}", file=sys.stderr)
+        return 5
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     if arguments.command == "prepare-case":
         return _prepare(arguments)
+    if arguments.command == "verify-change":
+        return _verify_change(arguments)
     return _verify(arguments)
