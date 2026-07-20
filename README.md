@@ -40,6 +40,20 @@ The complete result includes findings, evidence references, provenance limitatio
 - Status: `unsupported`
 ```
 
+## GitHub Actions
+
+The local composite action runs the same offline verifier, writes deterministic JSON under `.proofrail/results/`, appends the Markdown report to the job summary, and exposes the overall verdict and JSON path:
+
+```yaml
+- uses: ./.github/actions/proofrail-verify
+  id: proofrail
+  with:
+    case-directory: tests/fixtures/001-partial-workflow-fix
+    format: json
+```
+
+Outputs are available as `steps.proofrail.outputs.overall-verdict` and `steps.proofrail.outputs.result-json-path`. A completed `verified`, `partially_verified`, `unsupported`, `contradicted`, or `human_review_required` result succeeds; usage, case/schema, verification, and output failures return nonzero status.
+
 ## Proof boundary
 
 This is an offline deterministic prototype. It proves only what the supported case artifacts and structured evidence can establish; a recorded successful command is not treated as proof of the outcome it claimed to test.

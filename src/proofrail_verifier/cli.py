@@ -33,7 +33,7 @@ def _inside(path: Path, directory: Path) -> bool:
     return True
 
 
-def _write_atomic(path: Path, content: str, case_directory: Path) -> None:
+def write_atomic(path: Path, content: str, case_directory: Path) -> None:
     destination = path.resolve()
     if _inside(destination, case_directory.resolve()):
         raise OSError("refusing to write output inside the case directory")
@@ -82,7 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.output is None:
             sys.stdout.write(rendered)
         else:
-            _write_atomic(arguments.output, rendered, bundle.fixture_dir)
+            write_atomic(arguments.output, rendered, bundle.fixture_dir)
     except OSError as error:
         print(f"proofrail: output write failed: {error}", file=sys.stderr)
         return 5

@@ -1,0 +1,37 @@
+name: Proofrail fixtures
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        case:
+          - tests/fixtures/001-partial-workflow-fix
+          - tests/fixtures/002-incapable-validation-command
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: ./.github/actions/proofrail-verify
+        id: proofrail
+        with:
+          case-directory: ${{ matrix.case }}
+          format: json
+      - name: Assert fixture result
+        shell: bash
+        env:
+          PROOFRAIL_VERDICT: ${{ steps.proofrail.outputs.overall-verdict }}
+          PROOFRAIL_RESULT_PATH: ${{ steps.proofrail.outputs.result-json-path }}
+        run: |
+          test "$PROOFRAIL_VERDICT" = "partially_verified"
+          test -f "$PROOFRAIL_RESULT_PATH"

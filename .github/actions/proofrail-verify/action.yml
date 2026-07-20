@@ -1,0 +1,29 @@
+name: Proofrail verify
+description: Run the offline Proofrail verifier for a supported local case directory
+
+inputs:
+  case-directory:
+    description: Workspace-relative supported Proofrail case directory
+    required: true
+  format:
+    description: Result format printed to the action log (json or markdown)
+    required: false
+    default: json
+
+outputs:
+  overall-verdict:
+    description: Deterministically aggregated Proofrail verdict
+    value: ${{ steps.verify.outputs.overall-verdict }}
+  result-json-path:
+    description: Workspace-relative path to the deterministic JSON result
+    value: ${{ steps.verify.outputs.result-json-path }}
+
+runs:
+  using: composite
+  steps:
+    - id: verify
+      shell: bash
+      env:
+        INPUT_CASE_DIRECTORY: ${{ inputs.case-directory }}
+        INPUT_FORMAT: ${{ inputs.format }}
+      run: python3 "$GITHUB_ACTION_PATH/run.py"
