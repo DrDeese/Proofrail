@@ -36,3 +36,59 @@ jobs:
         run: |
           test "$PROOFRAIL_VERDICT" = "partially_verified"
           test -f "$PROOFRAIL_RESULT_PATH"
+
+  dogfood-pull-request:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Record exact pull request range
+        shell: bash
+        env:
+          PROOFRAIL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PROOFRAIL_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf 'Proofrail base SHA: %s\n' "$PROOFRAIL_BASE_SHA"
+          printf 'Proofrail head SHA: %s\n' "$PROOFRAIL_HEAD_SHA"
+          git cat-file -e "$PROOFRAIL_BASE_SHA^{commit}"
+          git cat-file -e "$PROOFRAIL_HEAD_SHA^{commit}"
+      - uses: ./.github/actions/proofrail-verify
+        id: proofrail
+        with:
+          repo: .
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          claim-file: .proofrail/claim.md
+          format: json
+      - name: Assert dogfood result
+        shell: bash
+        env:
+          PROOFRAIL_VERDICT: ${{ steps.proofrail.outputs.overall-verdict }}
+          PROOFRAIL_RESULT_PATH: ${{ steps.proofrail.outputs.result-json-path }}
+        run: |
+          test "$PROOFRAIL_VERDICT" = "partially_verified"
+          test -f "$PROOFRAIL_RESULT_PATH"
+          python3 - "$PROOFRAIL_RESULT_PATH" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              result = json.load(source)
+          statuses = {claim["claim_id"]: claim["status"] for claim in result["claims"]}
+          expected = {
+              "action-metadata-modified": "verified",
+              "action-wrapper-modified": "verified",
+              "claim-file-added": "verified",
+              "readme-modified": "verified",
+              "workflow-uses-exact-pr-shas": "unsupported",
+          }
+          if statuses != expected:
+              raise SystemExit(f"unexpected Proofrail statuses: {statuses!r}")
+          PY

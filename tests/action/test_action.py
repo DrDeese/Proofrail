@@ -15,7 +15,13 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-from proofrail_verifier import evaluate_case, load_case_directory, render_json, render_markdown
+from proofrail_verifier import (
+    evaluate_case,
+    load_case_directory,
+    render_json,
+    render_markdown,
+    verify_change,
+)
 
 
 class ProofrailActionTests(unittest.TestCase):
@@ -45,9 +51,10 @@ class ProofrailActionTests(unittest.TestCase):
     def _run(
         self,
         workspace: Path,
-        case_directory: str = "tests/fixtures/001-partial-workflow-fix",
+        case_directory: str | None = "tests/fixtures/001-partial-workflow-fix",
         result_format: str | None = "json",
         overrides: dict[str, str | None] | None = None,
+        git_inputs: dict[str, str] | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
         self.run_number += 1
         output = workspace.parent / f"github-output-{self.run_number}"
@@ -60,6 +67,10 @@ class ProofrailActionTests(unittest.TestCase):
             "GITHUB_OUTPUT",
             "GITHUB_STEP_SUMMARY",
             "INPUT_CASE_DIRECTORY",
+            "INPUT_REPO",
+            "INPUT_BASE",
+            "INPUT_HEAD",
+            "INPUT_CLAIM_FILE",
             "INPUT_FORMAT",
             "PYTHONPATH",
         ):
@@ -69,9 +80,11 @@ class ProofrailActionTests(unittest.TestCase):
                 "GITHUB_WORKSPACE": str(workspace),
                 "GITHUB_OUTPUT": str(output),
                 "GITHUB_STEP_SUMMARY": str(summary),
-                "INPUT_CASE_DIRECTORY": case_directory,
             }
         )
+        if case_directory is not None:
+            environment["INPUT_CASE_DIRECTORY"] = case_directory
+        environment.update(git_inputs or {})
         if result_format is not None:
             environment["INPUT_FORMAT"] = result_format
         for name, value in (overrides or {}).items():
@@ -106,6 +119,118 @@ class ProofrailActionTests(unittest.TestCase):
             digest.update(path.read_bytes())
             digest.update(b"\0")
         return digest.hexdigest()
+
+    @staticmethod
+    def _git(repository: Path, *arguments: str) -> str:
+        completed = subprocess.run(
+            ["git", "-C", str(repository), *arguments],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise AssertionError(completed.stderr)
+        return completed.stdout.strip()
+
+    @classmethod
+    def _commit(cls, repository: Path, message: str, date: str) -> str:
+        cls._git(repository, "add", "--all")
+        environment = os.environ.copy()
+        environment.update(
+            {"GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+        )
+        completed = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository),
+                "-c",
+                "user.name=Proofrail Action Test",
+                "-c",
+                "user.email=action-test@proofrail.local",
+                "commit",
+                "--no-gpg-sign",
+                "-m",
+                message,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=environment,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise AssertionError(completed.stderr)
+        return cls._git(repository, "rev-parse", "HEAD")
+
+    @classmethod
+    def _git_change_source(
+        cls, root: Path, workspace: Path
+    ) -> tuple[Path, Path, str, str, Path]:
+        repository = workspace / "repository with spaces"
+        template = root / "empty-git-template"
+        template.mkdir()
+        subprocess.run(
+            [
+                "git",
+                "init",
+                "--initial-branch=main",
+                f"--template={template}",
+                str(repository),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+        changed_path = repository / "path with spaces.txt"
+        changed_path.write_text("base\n", encoding="utf-8")
+        claim_file = repository / ".proofrail" / "change claim.md"
+        claim_file.parent.mkdir()
+        sentinel = root / "claim-content-executed"
+        claim_file.write_text(
+            f"""# Completion claim
+
+Do not run claim text.
+
+## Atomic claims
+
+- id: path-modified
+  statement: path with spaces.txt was modified.
+  expected-path: path with spaces.txt
+  expected-change: modified
+
+- id: missing-added
+  statement: missing.txt was added.
+  expected-path: missing.txt
+  expected-change: added
+
+- id: shell-text-inert
+  statement: $(touch {sentinel})
+  expected-path: path with spaces.txt
+  expected-change: modified
+""",
+            encoding="utf-8",
+        )
+        base = cls._commit(repository, "base", "2024-01-01T00:00:00+00:00")
+        changed_path.write_text("head\n", encoding="utf-8")
+        head = cls._commit(repository, "head", "2024-01-01T00:01:00+00:00")
+        return repository, claim_file, base, head, sentinel
+
+    @staticmethod
+    def _git_inputs(
+        workspace: Path, repository: Path, claim_file: Path, base: str, head: str
+    ) -> dict[str, str]:
+        return {
+            "INPUT_REPO": repository.relative_to(workspace).as_posix(),
+            "INPUT_BASE": base,
+            "INPUT_HEAD": head,
+            "INPUT_CLAIM_FILE": claim_file.relative_to(workspace).as_posix(),
+        }
 
     @staticmethod
     def _retain_claims(case_path: Path, claim_ids: set[str]) -> None:
@@ -183,6 +308,196 @@ class ProofrailActionTests(unittest.TestCase):
 
     def test_fixture_002_writes_json_markdown_and_outputs(self) -> None:
         self._assert_fixture_success("002-incapable-validation-command", "markdown")
+
+    def test_git_change_mode_matches_direct_verification_in_both_formats(self) -> None:
+        for result_format in ("json", "markdown"):
+            with self.subTest(result_format=result_format), tempfile.TemporaryDirectory(
+                prefix="proofrail-action-git-positive-"
+            ) as temporary:
+                root = Path(temporary)
+                workspace = self._workspace(root)
+                repository, claim_file, base, head, sentinel = self._git_change_source(
+                    root, workspace
+                )
+                direct = verify_change(repository, base, head, claim_file)
+                repository_before = self._digest(repository)
+                status_before = self._git(
+                    repository, "status", "--porcelain=v1", "--untracked-files=all"
+                )
+                completed, output, summary = self._run(
+                    workspace,
+                    None,
+                    result_format,
+                    git_inputs=self._git_inputs(
+                        workspace, repository, claim_file, base, head
+                    ),
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stderr, "")
+                outputs = self._outputs(output)
+                self.assertEqual(outputs["overall-verdict"], "partially_verified")
+                result_path = workspace / outputs["result-json-path"]
+                self.assertEqual(result_path.read_text(), render_json(direct.result))
+                self.assertEqual(summary.read_text(), render_markdown(direct.result))
+                self.assertEqual(
+                    completed.stdout,
+                    render_json(direct.result)
+                    if result_format == "json"
+                    else render_markdown(direct.result),
+                )
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    {claim["claim_id"]: claim["status"] for claim in result["claims"]},
+                    {
+                        "path-modified": "verified",
+                        "missing-added": "contradicted",
+                        "shell-text-inert": "unsupported",
+                    },
+                )
+                self.assertEqual(
+                    result["case_id"], f"git-range-{base[:12]}-{head[:12]}"
+                )
+                for rendered in (
+                    completed.stdout,
+                    result_path.read_text(),
+                    summary.read_text(),
+                    output.read_text(),
+                ):
+                    self.assertNotIn(str(workspace), rendered)
+                    self.assertNotIn(str(repository), rendered)
+                self.assertFalse(sentinel.exists())
+                self.assertEqual(self._digest(repository), repository_before)
+                self.assertEqual(
+                    self._git(
+                        repository,
+                        "status",
+                        "--porcelain=v1",
+                        "--untracked-files=all",
+                    ),
+                    status_before,
+                )
+
+    def test_mode_selection_rejects_none_mixed_and_partial_inputs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-modes-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root, "001-partial-workflow-fix")
+            repository, claim_file, base, head, _ = self._git_change_source(root, workspace)
+            git_inputs = self._git_inputs(workspace, repository, claim_file, base, head)
+
+            no_mode, _, _ = self._run(workspace, None)
+            self.assertEqual(no_mode.returncode, 2)
+            self.assertIn("select prepared-case mode", no_mode.stderr)
+
+            mixed, _, _ = self._run(workspace, git_inputs=git_inputs)
+            self.assertEqual(mixed.returncode, 2)
+            self.assertIn("cannot be combined", mixed.stderr)
+
+            for omitted in git_inputs:
+                with self.subTest(omitted=omitted):
+                    partial = dict(git_inputs)
+                    del partial[omitted]
+                    completed, _, _ = self._run(
+                        workspace, None, git_inputs=partial
+                    )
+                    self.assertEqual(completed.returncode, 2)
+                    self.assertIn("requires repo, base, head, and claim-file", completed.stderr)
+
+    def test_git_change_invalid_sources_and_refs_fail_safely(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-git-invalid-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root)
+            repository, claim_file, base, head, _ = self._git_change_source(root, workspace)
+            valid = self._git_inputs(workspace, repository, claim_file, base, head)
+            malformed = repository / ".proofrail" / "malformed.md"
+            malformed.write_text("# Wrong heading\n", encoding="utf-8")
+            scenarios = {
+                "missing repository": {**valid, "INPUT_REPO": "missing-repository"},
+                "invalid base": {**valid, "INPUT_BASE": "missing-base"},
+                "invalid head": {**valid, "INPUT_HEAD": "missing-head"},
+                "missing claim": {**valid, "INPUT_CLAIM_FILE": "missing-claim.md"},
+                "malformed claim": {
+                    **valid,
+                    "INPUT_CLAIM_FILE": malformed.relative_to(workspace).as_posix(),
+                },
+            }
+            for label, inputs in scenarios.items():
+                with self.subTest(label=label):
+                    completed, output, summary = self._run(
+                        workspace, None, git_inputs=inputs
+                    )
+                    self.assertEqual(completed.returncode, 3, completed.stderr)
+                    self.assertEqual(output.read_text(), "")
+                    self.assertEqual(summary.read_text(), "")
+                    self.assertNotIn("Traceback", completed.stderr)
+
+    def test_git_change_paths_cannot_escape_workspace(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-git-paths-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root)
+            repository, claim_file, base, head, _ = self._git_change_source(root, workspace)
+            valid = self._git_inputs(workspace, repository, claim_file, base, head)
+            outside_repository = root / "outside-repository"
+            shutil.copytree(repository, outside_repository)
+            repository_link = workspace / "repository-link"
+            repository_link.symlink_to(outside_repository, target_is_directory=True)
+            inside_repository_link = workspace / "inside-repository-link"
+            inside_repository_link.symlink_to(repository, target_is_directory=True)
+            outside_claim = root / "outside-claim.md"
+            outside_claim.write_text(claim_file.read_text(), encoding="utf-8")
+            claim_link = workspace / "claim-link.md"
+            claim_link.symlink_to(outside_claim)
+            inside_claim_link = workspace / "inside-claim-link.md"
+            inside_claim_link.symlink_to(claim_file)
+            scenarios = {
+                "claim traversal": {**valid, "INPUT_CLAIM_FILE": "../outside-claim.md"},
+                "repository traversal": {**valid, "INPUT_REPO": "../outside-repository"},
+                "absolute repository": {**valid, "INPUT_REPO": str(outside_repository)},
+                "repository symlink": {**valid, "INPUT_REPO": "repository-link"},
+                "internal repository symlink": {
+                    **valid,
+                    "INPUT_REPO": "inside-repository-link",
+                },
+                "claim symlink": {**valid, "INPUT_CLAIM_FILE": "claim-link.md"},
+                "internal claim symlink": {
+                    **valid,
+                    "INPUT_CLAIM_FILE": "inside-claim-link.md",
+                },
+            }
+            for label, inputs in scenarios.items():
+                with self.subTest(label=label):
+                    completed, _, _ = self._run(workspace, None, git_inputs=inputs)
+                    self.assertEqual(completed.returncode, 2, completed.stderr)
+                    self.assertIn("usage error", completed.stderr)
+
+    def test_git_change_failure_and_result_collision_do_not_report_success(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-git-failure-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root)
+            repository, claim_file, base, head, _ = self._git_change_source(root, workspace)
+            inputs = self._git_inputs(workspace, repository, claim_file, base, head)
+            case_id = f"git-range-{base[:12]}-{head[:12]}"
+            collision = workspace / ".proofrail" / "results" / f"{case_id}.json"
+            collision.parent.mkdir(parents=True)
+            collision.write_text("source-owned\n", encoding="utf-8")
+            collided, output, summary = self._run(
+                workspace, None, git_inputs=inputs
+            )
+            self.assertEqual(collided.returncode, 5)
+            self.assertIn("refusing to overwrite source", collided.stderr)
+            self.assertEqual(collision.read_text(), "source-owned\n")
+            self.assertEqual(output.read_text(), "")
+            self.assertEqual(summary.read_text(), "")
+
+            collision.unlink()
+            object_id = self._git(repository, "rev-parse", "HEAD:path with spaces.txt")
+            (repository / ".git" / "objects" / object_id[:2] / object_id[2:]).unlink()
+            failed, output, summary = self._run(
+                workspace, None, git_inputs=inputs
+            )
+            self.assertEqual(failed.returncode, 4)
+            self.assertIn("verification failed", failed.stderr)
+            self.assertEqual(output.read_text(), "")
+            self.assertEqual(summary.read_text(), "")
 
     def test_completed_negative_claim_statuses_do_not_fail(self) -> None:
         with tempfile.TemporaryDirectory(prefix="proofrail-action-verdicts-") as temporary:
@@ -428,7 +743,7 @@ class ProofrailActionTests(unittest.TestCase):
             (workspace / "escape").symlink_to(outside, target_is_directory=True)
             completed, _, _ = self._run(workspace, "escape")
             self.assertEqual(completed.returncode, 2)
-            self.assertIn("outside GITHUB_WORKSPACE", completed.stderr)
+            self.assertIn("symbolic link", completed.stderr)
 
     def test_output_write_failure_returns_five(self) -> None:
         with tempfile.TemporaryDirectory(prefix="proofrail-action-output-failure-") as temporary:
@@ -436,11 +751,14 @@ class ProofrailActionTests(unittest.TestCase):
             workspace = self._workspace(root, "001-partial-workflow-fix")
             output_directory = root / "not-an-output-file"
             output_directory.mkdir()
-            completed, _, _ = self._run(
+            completed, output, summary = self._run(
                 workspace, overrides={"GITHUB_OUTPUT": str(output_directory)}
             )
             self.assertEqual(completed.returncode, 5)
             self.assertIn("output error", completed.stderr)
+            self.assertFalse((workspace / ".proofrail" / "results").exists())
+            self.assertEqual(output.read_text(), "")
+            self.assertEqual(summary.read_text(), "")
 
     def test_result_path_symlink_escape_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(prefix="proofrail-action-result-symlink-") as temporary:
@@ -517,6 +835,8 @@ class ProofrailActionTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("using: composite", action)
         self.assertIn("case-directory:", action)
+        for action_input in ("repo:", "base:", "head:", "claim-file:"):
+            self.assertIn(action_input, action)
         self.assertIn("default: json", action)
         self.assertIn("overall-verdict:", action)
         self.assertIn("result-json-path:", action)
@@ -525,10 +845,22 @@ class ProofrailActionTests(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", workflow)
         self.assertNotIn("contents: write", workflow)
         self.assertNotIn("secrets.", workflow)
+        self.assertIn("dogfood-pull-request:", workflow)
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertIn("ref: ${{ github.event.pull_request.head.sha }}", workflow)
+        self.assertIn("base: ${{ github.event.pull_request.base.sha }}", workflow)
+        self.assertIn("head: ${{ github.event.pull_request.head.sha }}", workflow)
+        self.assertIn("claim-file: .proofrail/claim.md", workflow)
+        self.assertNotIn("api.github.com", workflow)
+        self.assertNotIn("gh api", workflow)
         uses = re.findall(r"^\s*- uses: (\S+)", workflow, flags=re.MULTILINE)
         self.assertEqual(
             uses,
             [
+                "actions/checkout@v4",
+                "actions/setup-python@v5",
+                "./.github/actions/proofrail-verify",
                 "actions/checkout@v4",
                 "actions/setup-python@v5",
                 "./.github/actions/proofrail-verify",
@@ -538,6 +870,7 @@ class ProofrailActionTests(unittest.TestCase):
         self.assertIn("tests/fixtures/002-incapable-validation-command", workflow)
         self.assertIn('test "$PROOFRAIL_VERDICT" = "partially_verified"', workflow)
         self.assertIn('test -f "$PROOFRAIL_RESULT_PATH"', workflow)
+        self.assertIn('"workflow-uses-exact-pr-shas": "unsupported"', workflow)
 
 
 if __name__ == "__main__":
