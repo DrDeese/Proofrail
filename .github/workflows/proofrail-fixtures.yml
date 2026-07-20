@@ -30,7 +30,7 @@ jobs:
           format: json
       - name: Assert fixture result
         env:
-          PROOFRAIL_STEP_CONTRACT: contracts/step-15.yml
+          PROOFRAIL_STEP_CONTRACT: contracts/step-16.yml
           PROOFRAIL_CASE_DIRECTORY: ${{ matrix.case }}
           PROOFRAIL_VERDICT: ${{ steps.proofrail.outputs.overall-verdict }}
           PROOFRAIL_RESULT_PATH: ${{ steps.proofrail.outputs.result-json-path }}
@@ -97,7 +97,7 @@ jobs:
           format: json
       - name: Assert dogfood result
         env:
-          PROOFRAIL_STEP_CONTRACT: contracts/step-15.yml
+          PROOFRAIL_STEP_CONTRACT: contracts/step-16.yml
           PROOFRAIL_VERDICT: ${{ steps.proofrail.outputs.overall-verdict }}
           PROOFRAIL_RESULT_PATH: ${{ steps.proofrail.outputs.result-json-path }}
           PROOFRAIL_CLAIMS_SYNCHRONIZED: ${{ steps.proofrail.outputs.claims-synchronized }}
