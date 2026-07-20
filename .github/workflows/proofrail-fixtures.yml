@@ -29,13 +29,39 @@ jobs:
           case-directory: ${{ matrix.case }}
           format: json
       - name: Assert fixture result
-        shell: bash
         env:
+          PROOFRAIL_STEP_CONTRACT: contracts/step-14.yml
+          PROOFRAIL_CASE_DIRECTORY: ${{ matrix.case }}
           PROOFRAIL_VERDICT: ${{ steps.proofrail.outputs.overall-verdict }}
           PROOFRAIL_RESULT_PATH: ${{ steps.proofrail.outputs.result-json-path }}
         run: |
-          test "$PROOFRAIL_VERDICT" = "partially_verified"
-          test -f "$PROOFRAIL_RESULT_PATH"
+          python3 - "$PROOFRAIL_STEP_CONTRACT" "$PROOFRAIL_CASE_DIRECTORY" "$PROOFRAIL_VERDICT" "$PROOFRAIL_RESULT_PATH" <<'PY'
+          import json
+          import runpy
+          import sys
+          from pathlib import Path
+
+          contract_path = Path(sys.argv[1])
+          preflight = runpy.run_path("scripts/proofrail_step_preflight.py")
+          raw = preflight["parse_bounded_yaml"](
+              contract_path.read_text(encoding="utf-8"), contract=True
+          )
+          schema = json.loads(
+              Path("contracts/step-contract.schema.json").read_text(encoding="utf-8")
+          )
+          contract = preflight["validate_contract"](raw, schema)
+          fixture_id = Path(sys.argv[2]).name
+          expected = contract["expectations"]["fixture-verdicts"].get(fixture_id)
+          if expected is None or sys.argv[3] != expected:
+              raise SystemExit("fixture verdict does not match the active contract")
+          result_path = Path(sys.argv[4])
+          if not result_path.is_file():
+              raise SystemExit("Proofrail fixture JSON result is missing")
+          with result_path.open(encoding="utf-8") as source:
+              result = json.load(source)
+          if result["case_id"] != fixture_id or result["overall_verdict"] != expected:
+              raise SystemExit("fixture JSON does not match the active contract")
+          PY
 
   dogfood-pull-request:
     if: github.event_name == 'pull_request'
@@ -70,8 +96,8 @@ jobs:
           check-claims: true
           format: json
       - name: Assert dogfood result
-        shell: bash
         env:
+          PROOFRAIL_STEP_CONTRACT: contracts/step-14.yml
           PROOFRAIL_VERDICT: ${{ steps.proofrail.outputs.overall-verdict }}
           PROOFRAIL_RESULT_PATH: ${{ steps.proofrail.outputs.result-json-path }}
           PROOFRAIL_CLAIMS_SYNCHRONIZED: ${{ steps.proofrail.outputs.claims-synchronized }}
@@ -79,33 +105,43 @@ jobs:
           PROOFRAIL_POLICY_ACCEPTED: ${{ steps.proofrail.outputs.policy-accepted }}
           PROOFRAIL_POLICY_RESULT_PATH: ${{ steps.proofrail.outputs.policy-result-json-path }}
         run: |
-          test "$PROOFRAIL_CLAIMS_SYNCHRONIZED" = "true"
-          test -f "$PROOFRAIL_CLAIM_CHECK_PATH"
-          test "$PROOFRAIL_VERDICT" = "verified"
-          test -f "$PROOFRAIL_RESULT_PATH"
-          test "$PROOFRAIL_POLICY_ACCEPTED" = "true"
-          test -f "$PROOFRAIL_POLICY_RESULT_PATH"
-          python3 - "$PROOFRAIL_CLAIM_CHECK_PATH" "$PROOFRAIL_RESULT_PATH" "$PROOFRAIL_POLICY_RESULT_PATH" <<'PY'
+          python3 - "$PROOFRAIL_STEP_CONTRACT" "$PROOFRAIL_CLAIM_CHECK_PATH" "$PROOFRAIL_RESULT_PATH" "$PROOFRAIL_POLICY_RESULT_PATH" <<'PY'
           import json
+          import os
+          import runpy
           import sys
+          from pathlib import Path
 
-          expected = {
-              "github-actions-proofrail-verify-action-yml-modified": "verified",
-              "github-actions-proofrail-verify-run-py-modified": "verified",
-              "github-workflows-proofrail-fixtures-yml-modified": "verified",
-              "proofrail-claim-md-modified": "verified",
-              "readme-md-modified": "verified",
-              "src-proofrail-verifier-init-py-modified": "verified",
-              "src-proofrail-verifier-claim-checking-py-added": "verified",
-              "src-proofrail-verifier-cli-py-modified": "verified",
-              "tests-action-test-action-py-modified": "verified",
-              "tests-claim-checking-test-check-claims-py-added": "verified",
-              "tests-end-to-end-test-draft-claims-action-py-modified": "verified",
-          }
-          with open(sys.argv[1], encoding="utf-8") as source:
+          contract_path = Path(sys.argv[1])
+          preflight = runpy.run_path("scripts/proofrail_step_preflight.py")
+          raw = preflight["parse_bounded_yaml"](
+              contract_path.read_text(encoding="utf-8"), contract=True
+          )
+          schema = json.loads(
+              Path("contracts/step-contract.schema.json").read_text(encoding="utf-8")
+          )
+          contract = preflight["validate_contract"](raw, schema)
+          expectations = contract["expectations"]
+          workflow_path = Path(contract["workflow"]["path"])
+          workflow_text = workflow_path.read_text(encoding="utf-8")
+          workflow = preflight["parse_bounded_yaml"](workflow_text, contract=False)
+          source = Path("scripts/proofrail_step_preflight.py").read_text(encoding="utf-8")
+          reason, offending = preflight["validate_contract_source"](
+              contract, contract_path.as_posix(), workflow, workflow_text, source
+          )
+          if reason:
+              raise SystemExit(f"contract-source mismatch: {reason}: {offending!r}")
+          for result_path in map(Path, sys.argv[2:]):
+              if not result_path.is_file():
+                  raise SystemExit(f"Proofrail JSON result is missing: {result_path}")
+          with open(sys.argv[2], encoding="utf-8") as source:
               claim_check = json.load(source)
-          if claim_check["synchronized"] is not True:
+          if (
+              claim_check["synchronized"] is not True
+              or os.environ["PROOFRAIL_CLAIMS_SYNCHRONIZED"] != "true"
+          ):
               raise SystemExit(f"unexpected Proofrail claim check: {claim_check!r}")
+          expected = expectations["claim-statuses"]
           if claim_check["changed_path_count"] != len(expected):
               raise SystemExit(f"unexpected changed-path count: {claim_check!r}")
           if claim_check["claim_predicate_count"] != len(expected):
@@ -121,15 +157,21 @@ jobs:
           }
           if matched != expected_changes:
               raise SystemExit(f"unexpected Proofrail claim coverage: {matched!r}")
-          with open(sys.argv[2], encoding="utf-8") as source:
+          with open(sys.argv[3], encoding="utf-8") as source:
               result = json.load(source)
           statuses = {claim["claim_id"]: claim["status"] for claim in result["claims"]}
-          if statuses != expected:
+          if statuses != expected or result["overall_verdict"] != expectations["overall-verdict"]:
               raise SystemExit(f"unexpected Proofrail statuses: {statuses!r}")
-          with open(sys.argv[3], encoding="utf-8") as source:
+          if os.environ["PROOFRAIL_VERDICT"] != expectations["overall-verdict"]:
+              raise SystemExit("Proofrail verdict output does not match the active contract")
+          with open(sys.argv[4], encoding="utf-8") as source:
               policy = json.load(source)
-          if policy["accepted"] is not True:
+          if policy["accepted"] is not expectations["policy-accepted"]:
               raise SystemExit(f"unexpected Proofrail policy result: {policy!r}")
+          if os.environ["PROOFRAIL_POLICY_ACCEPTED"] != str(
+              expectations["policy-accepted"]
+          ).lower():
+              raise SystemExit("Proofrail policy output does not match the active contract")
           decisions = {
               decision["claim_id"]: decision for decision in policy["claim_decisions"]
           }
@@ -138,11 +180,22 @@ jobs:
           if set(decisions) != set(expected):
               raise SystemExit(f"unexpected Proofrail policy decisions: {decisions!r}")
           if not all(
-              decision["rule"] == "claims.allowed-statuses"
+              decision["rule"] == expectations["allowed-statuses-source"]
               for decision in decisions.values()
           ):
               raise SystemExit(f"unexpected Proofrail exception rule: {decisions!r}")
-          if policy["overall_decision"] != {"accepted": True, "verdict": "verified"}:
+          applied = sorted(
+              decision["claim_id"]
+              for decision in decisions.values()
+              if decision["rule"] != expectations["allowed-statuses-source"]
+          )
+          if applied != sorted(expectations["exceptions-applied"]):
+              raise SystemExit(f"unexpected Proofrail exceptions: {applied!r}")
+          expected_overall = {
+              "accepted": expectations["policy-accepted"],
+              "verdict": expectations["overall-verdict"],
+          }
+          if policy["overall_decision"] != expected_overall:
               raise SystemExit(f"unexpected overall policy decision: {policy!r}")
           if policy["reasons"]:
               raise SystemExit(f"unexpected Proofrail policy reasons: {policy!r}")

@@ -533,8 +533,12 @@ def _walk_key(value: Any, key: str) -> list[Any]:
     return found
 
 
-def _validate_contract_source(
-    contract: dict[str, Any], workflow: dict[str, Any], workflow_text: str, source: str
+def validate_contract_source(
+    contract: dict[str, Any],
+    contract_path: str,
+    workflow: dict[str, Any],
+    workflow_text: str,
+    source: str,
 ) -> tuple[str | None, str | None]:
     for value in sorted(_contract_specific_values(contract)):
         for quote in ('"', "'"):
@@ -556,26 +560,22 @@ def _validate_contract_source(
     if "secrets." in workflow_text or "permissions: write" in workflow_text:
         return "workflow references a secret or write permission", None
 
-    expectations = contract["expectations"]
-    for claim_id, status in expectations["claim-statuses"].items():
-        pair = f"{json.dumps(claim_id)}: {json.dumps(status)}"
-        if pair not in workflow_text:
-            return "workflow lacks a contract claim-status expectation", claim_id
-    if f'= "{expectations["overall-verdict"]}"' not in workflow_text:
-        return "workflow lacks the contract overall-verdict expectation", expectations["overall-verdict"]
-    policy_value = str(expectations["policy-accepted"]).lower()
-    if f'= "{policy_value}"' not in workflow_text:
-        return "workflow lacks the contract policy-accepted expectation", policy_value
-    if expectations["allowed-statuses-source"] not in workflow_text:
-        return "workflow lacks the contract policy rule-source expectation", expectations["allowed-statuses-source"]
-    for fixture_id, verdict in expectations["fixture-verdicts"].items():
-        if fixture_id not in workflow_text or f'= "{verdict}"' not in workflow_text:
-            return "workflow lacks a contract fixture-verdict expectation", fixture_id
-    for exception in expectations["exceptions-applied"]:
-        if exception not in workflow_text:
-            return "workflow lacks a contract exception expectation", exception
-    if not expectations["exceptions-applied"] and "exceptions." in workflow_text:
-        return "workflow contains an exception absent from the contract", None
+    if contract_path not in workflow_text:
+        return "workflow does not name the active contract", contract_path
+    required_lookups = (
+        '["claim-statuses"]',
+        '["overall-verdict"]',
+        '["policy-accepted"]',
+        '["allowed-statuses-source"]',
+        '["exceptions-applied"]',
+        '["fixture-verdicts"]',
+    )
+    for lookup in required_lookups:
+        if lookup not in workflow_text:
+            return "workflow does not load every expectation from the contract", lookup
+    for claim_id in contract["expectations"]["claim-statuses"]:
+        if json.dumps(claim_id) in workflow_text:
+            return "workflow duplicates a contract claim ID inline", claim_id
     return None, None
 
 
@@ -643,7 +643,9 @@ def run_preflight(repository_arg: str, contract_arg: str, output_arg: str) -> tu
         _mark(result, check, "PASS", "working-tree and staged diffs passed whitespace checks")
 
         check = "authorized-files"
-        operational = {contract_relative, output_arg}
+        operational = {output_arg}
+        if contract_relative not in contract["authorized-files"]:
+            operational.add(contract_relative)
         actual = _changed_files(repository, contract["base-sha"], operational)
         expected = sorted(contract["authorized-files"])
         missing = sorted(set(expected) - set(actual))
@@ -656,6 +658,8 @@ def run_preflight(repository_arg: str, contract_arg: str, output_arg: str) -> tu
         check = "stale-identifiers"
         _git(repository, ["diff", "--binary", contract["base-sha"], "--"], binary=True)
         for relative in actual:
+            if relative == contract_relative:
+                continue
             candidate = repository / relative
             if candidate.is_symlink():
                 text = os.readlink(candidate)
@@ -677,7 +681,9 @@ def run_preflight(repository_arg: str, contract_arg: str, output_arg: str) -> tu
         if not implementation.is_file() or implementation.is_symlink():
             raise InputFailure("preflight implementation source is missing")
         source = implementation.read_text(encoding="utf-8")
-        reason, offending = _validate_contract_source(contract, workflow, workflow_text, source)
+        reason, offending = validate_contract_source(
+            contract, contract_relative, workflow, workflow_text, source
+        )
         if reason:
             _fail(result, check, reason, file="scripts/proofrail_step_preflight.py" if "inline" in reason else contract["workflow"]["path"], string=offending)
             return result, 1, output_path

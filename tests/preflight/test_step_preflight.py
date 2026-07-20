@@ -54,13 +54,15 @@ class RepositoryFixture:
             "jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n"
             "      - uses: actions/checkout@v4\n"
             "        with:\n          fetch-depth: 0\n          persist-credentials: false\n"
-            "      - name: Assert contract values\n        run: |\n"
-            "          test \"$VERDICT\" = \"verified\"\n"
-            "          test \"$POLICY\" = \"true\"\n"
-            "          test \"$FIXTURE\" = \"partially_verified\"\n"
-            "          fixture-one\n"
-            "          claims.allowed-statuses\n"
-            "          \"current-artifact-modified\": \"verified\"\n",
+            "      - name: Assert contract values\n"
+            "        env:\n          PROOFRAIL_STEP_CONTRACT: .proofrail/test-contract.yml\n"
+            "        run: |\n"
+            "          expectations[\"claim-statuses\"]\n"
+            "          expectations[\"overall-verdict\"]\n"
+            "          expectations[\"policy-accepted\"]\n"
+            "          expectations[\"allowed-statuses-source\"]\n"
+            "          expectations[\"exceptions-applied\"]\n"
+            "          expectations[\"fixture-verdicts\"]\n",
             encoding="utf-8",
         )
         for suite in ("action", "end_to_end", "policy"):
@@ -419,6 +421,24 @@ class StepPreflightTest(unittest.TestCase):
         self.repository.authorized.append("scripts/proofrail_step_preflight.py")
         self.repository.write_contract()
         self.assert_failure("contract-source")
+
+    def test_inline_claim_id_in_workflow_is_detected(self) -> None:
+        workflow = self.repository.root / ".github/workflows/test.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8")
+            + f"# {json.dumps(self.repository.claim_id)}\n",
+            encoding="utf-8",
+        )
+        self.repository.authorized.append(".github/workflows/test.yml")
+        self.repository.write_contract()
+        result = self.assert_failure("contract-source")
+        self.assertEqual(self.repository.claim_id, result["failure"]["string"])
+
+    def test_changed_active_contract_is_counted_when_authorized(self) -> None:
+        self.repository.authorized.append(self.repository.contract_path)
+        self.repository.write_contract()
+        completed = self.repository.run()
+        self.assertEqual(0, completed.returncode, completed.stderr)
 
     def test_existing_report_path(self) -> None:
         (self.repository.root / self.repository.output_path).write_text("existing\n", encoding="utf-8")
