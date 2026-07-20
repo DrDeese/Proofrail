@@ -1,0 +1,146 @@
+version: 1
+step: 13
+base-sha: d20fef7468921ec3b096824638941fe64147d35a
+
+workflow:
+  path: .github/workflows/proofrail-fixtures.yml
+
+tests:
+  action:
+    command:
+      - python3
+      - -m
+      - unittest
+      - discover
+      - -s
+      - tests/action
+      - -v
+  end-to-end:
+    command:
+      - python3
+      - -m
+      - unittest
+      - discover
+      - -s
+      - tests/end_to_end
+      - -v
+  policy:
+    command:
+      - python3
+      - -m
+      - unittest
+      - discover
+      - -s
+      - tests/policy
+      - -v
+
+authorized-files:
+  - .github/actions/proofrail-verify/action.yml
+  - .github/actions/proofrail-verify/run.py
+  - .github/workflows/proofrail-fixtures.yml
+  - .proofrail/claim.md
+  - README.md
+  - src/proofrail_verifier/__init__.py
+  - src/proofrail_verifier/claim_checking.py
+  - src/proofrail_verifier/cli.py
+  - tests/action/test_action.py
+  - tests/claim_checking/test_check_claims.py
+  - tests/end_to_end/test_draft_claims_action.py
+
+expectations:
+  claim-statuses:
+    github-actions-proofrail-verify-action-yml-modified: verified
+    github-actions-proofrail-verify-run-py-modified: verified
+    github-workflows-proofrail-fixtures-yml-modified: verified
+    proofrail-claim-md-modified: verified
+    readme-md-modified: verified
+    src-proofrail-verifier-init-py-modified: verified
+    src-proofrail-verifier-claim-checking-py-added: verified
+    src-proofrail-verifier-cli-py-modified: verified
+    tests-action-test-action-py-modified: verified
+    tests-claim-checking-test-check-claims-py-added: verified
+    tests-end-to-end-test-draft-claims-action-py-modified: verified
+  overall-verdict: verified
+  policy-accepted: true
+  allowed-statuses-source: claims.allowed-statuses
+  exceptions-applied: []
+  fixture-verdicts:
+    001-partial-workflow-fix: partially_verified
+    002-incapable-validation-command: partially_verified
+
+security:
+  permissions:
+    contents: read
+  approved-actions:
+    - actions/checkout@v4
+    - actions/setup-python@v5
+    - ./.github/actions/proofrail-verify
+  fetch-depth: 0
+  persist-credentials: false
+
+stale-identifiers:
+  - value: policy-module-added
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+  - value: policy-tests-added
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+  - value: action-metadata-modified
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+  - value: action-wrapper-modified
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+  - value: workflow-policy-wired
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+      - tests/action/test_action.py
+  - value: policy-file-added
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+  - value: readme-modified
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+  - value: "\"workflow-policy-wired\": \"unsupported\""
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+  - value: exceptions.workflow-policy-wired.allowed-statuses
+    owner-step: 11
+    allowed-files:
+      - contracts/step-13.yml
+  - value: proofrail-policy-yml-modified
+    owner-step: 12
+    allowed-files:
+      - contracts/step-13.yml
+  - value: src-proofrail-verifier-claim-drafting-py-added
+    owner-step: 12
+    allowed-files:
+      - contracts/step-13.yml
+  - value: src-proofrail-verifier-git-source-py-modified
+    owner-step: 12
+    allowed-files:
+      - contracts/step-13.yml
+  - value: tests-claim-drafting-test-draft-claims-py-added
+    owner-step: 12
+    allowed-files:
+      - contracts/step-13.yml
+  - value: tests-end-to-end-test-draft-claims-action-py-added
+    owner-step: 12
+    allowed-files:
+      - contracts/step-13.yml
+  - value: tests-policy-test-policy-py-modified
+    owner-step: 12
+    allowed-files:
+      - contracts/step-13.yml
+  - value: step12-path-
+    owner-step: 12
+    allowed-files:
+      - contracts/step-13.yml

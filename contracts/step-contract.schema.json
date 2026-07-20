@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proofrail.local/schemas/step-contract.schema.json",
+  "title": "Proofrail step preflight contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "step",
+    "base-sha",
+    "workflow",
+    "tests",
+    "authorized-files",
+    "expectations",
+    "security",
+    "stale-identifiers"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "step": {"type": "integer", "minimum": 1},
+    "base-sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {"path": {"$ref": "#/$defs/path"}}
+    },
+    "tests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "end-to-end", "policy"],
+      "properties": {
+        "action": {"$ref": "#/$defs/test"},
+        "end-to-end": {"$ref": "#/$defs/test"},
+        "policy": {"$ref": "#/$defs/test"}
+      }
+    },
+    "authorized-files": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/path"}
+    },
+    "expectations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim-statuses",
+        "overall-verdict",
+        "policy-accepted",
+        "allowed-statuses-source",
+        "exceptions-applied",
+        "fixture-verdicts"
+      ],
+      "properties": {
+        "claim-statuses": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/claim-status"}
+        },
+        "overall-verdict": {"$ref": "#/$defs/verdict"},
+        "policy-accepted": {"type": "boolean"},
+        "allowed-statuses-source": {"type": "string", "minLength": 1},
+        "exceptions-applied": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "fixture-verdicts": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/verdict"}
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "permissions",
+        "approved-actions",
+        "fetch-depth",
+        "persist-credentials"
+      ],
+      "properties": {
+        "permissions": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "enum": ["read", "none"]}
+        },
+        "approved-actions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "fetch-depth": {"type": "integer", "minimum": 0},
+        "persist-credentials": {"type": "boolean"}
+      }
+    },
+    "stale-identifiers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "owner-step", "allowed-files"],
+        "properties": {
+          "value": {"type": "string", "minLength": 1},
+          "owner-step": {"type": "integer", "minimum": 1},
+          "allowed-files": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/path"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//)(?!.*\\\\).+$"
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "claim-status": {
+      "type": "string",
+      "enum": ["verified", "unsupported", "contradicted", "human_review_required"]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "verified",
+        "partially_verified",
+        "unsupported",
+        "contradicted",
+        "human_review_required"
+      ]
+    }
+  }
+}

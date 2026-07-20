@@ -204,6 +204,22 @@ JSON is the default; `--format markdown` renders the same result as Markdown. `-
 
 The command exits `0` whenever preparation and verification complete, including contradicted, unsupported, or partially verified verdicts. Invalid repository, ref, claim, or generated-schema input exits `3`; preparation or verification failure exits `4`; destination publication failure exits `5`; command-line usage errors exit `2`.
 
+## Run a numbered-step preflight
+
+Use the `proofrail-autonomous-step` skill to implement, verify, review, repair, and—when its bounded authorization permits—commit a step. Use the more restrictive `proofrail-step-preflight` skill after implementation and before staging to run a read-only, fail-closed gate from an exact caller-provided contract.
+
+Contracts are named `contracts/step-<number>.yml`; there is no implicit current contract. Invoke the gate with the exact contract and a new repository-relative report path:
+
+```sh
+PYTHONPATH=src python3 scripts/proofrail_step_preflight.py \
+  --contract contracts/step-13.yml \
+  --output .proofrail/preflight-result.json
+```
+
+The gate runs the contract's exact test argument arrays, checks the complete change set and stale identifiers against its immutable base SHA, and writes deterministic JSON. `PASS` means every configured check completed successfully; `FAIL` identifies the first failed check and leaves all later checks `NOT_RUN`. A `PASS` grants no authority to edit, repair, stage, commit, push, open or merge a pull request, deploy, or alter repository permissions.
+
+Exit codes are `0` for `PASS`, `1` for a completed preflight `FAIL`, `2` for invalid command-line usage, `3` for invalid contract/repository/base/source input, `4` for a test launch, parsing, comparison, or preflight execution failure, and `5` for report publication failure. The report destination must not already exist; no overwrite mode is provided.
+
 ## Start here
 
 1. Read `PRODUCT.md`.

@@ -1,18 +1,13 @@
 # Completion claim
 
-Step 13 artifact changes
+Step 14 artifact changes
 
 ## Atomic claims
 
-- id: github-actions-proofrail-verify-action-yml-modified
-  statement: .github/actions/proofrail-verify/action.yml was modified.
-  expected-path: .github/actions/proofrail-verify/action.yml
-  expected-change: modified
-
-- id: github-actions-proofrail-verify-run-py-modified
-  statement: .github/actions/proofrail-verify/run.py was modified.
-  expected-path: .github/actions/proofrail-verify/run.py
-  expected-change: modified
+- id: codex-skills-proofrail-step-preflight-skill-md-added
+  statement: .codex/skills/proofrail-step-preflight/SKILL.md was added.
+  expected-path: .codex/skills/proofrail-step-preflight/SKILL.md
+  expected-change: added
 
 - id: github-workflows-proofrail-fixtures-yml-modified
   statement: .github/workflows/proofrail-fixtures.yml was modified.
@@ -29,32 +24,37 @@ Step 13 artifact changes
   expected-path: README.md
   expected-change: modified
 
-- id: src-proofrail-verifier-init-py-modified
-  statement: src/proofrail_verifier/__init__.py was modified.
-  expected-path: src/proofrail_verifier/__init__.py
-  expected-change: modified
-
-- id: src-proofrail-verifier-claim-checking-py-added
-  statement: src/proofrail_verifier/claim_checking.py was added.
-  expected-path: src/proofrail_verifier/claim_checking.py
+- id: contracts-readme-md-added
+  statement: contracts/README.md was added.
+  expected-path: contracts/README.md
   expected-change: added
 
-- id: src-proofrail-verifier-cli-py-modified
-  statement: src/proofrail_verifier/cli.py was modified.
-  expected-path: src/proofrail_verifier/cli.py
-  expected-change: modified
+- id: contracts-step-13-yml-added
+  statement: contracts/step-13.yml was added.
+  expected-path: contracts/step-13.yml
+  expected-change: added
+
+- id: contracts-step-14-yml-added
+  statement: contracts/step-14.yml was added.
+  expected-path: contracts/step-14.yml
+  expected-change: added
+
+- id: contracts-step-contract-schema-json-added
+  statement: contracts/step-contract.schema.json was added.
+  expected-path: contracts/step-contract.schema.json
+  expected-change: added
+
+- id: scripts-proofrail-step-preflight-py-added
+  statement: scripts/proofrail_step_preflight.py was added.
+  expected-path: scripts/proofrail_step_preflight.py
+  expected-change: added
 
 - id: tests-action-test-action-py-modified
   statement: tests/action/test_action.py was modified.
   expected-path: tests/action/test_action.py
   expected-change: modified
 
-- id: tests-claim-checking-test-check-claims-py-added
-  statement: tests/claim_checking/test_check_claims.py was added.
-  expected-path: tests/claim_checking/test_check_claims.py
+- id: tests-preflight-test-step-preflight-py-added
+  statement: tests/preflight/test_step_preflight.py was added.
+  expected-path: tests/preflight/test_step_preflight.py
   expected-change: added
-
-- id: tests-end-to-end-test-draft-claims-action-py-modified
-  statement: tests/end_to_end/test_draft_claims_action.py was modified.
-  expected-path: tests/end_to_end/test_draft_claims_action.py
-  expected-change: modified

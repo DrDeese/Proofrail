@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -1204,28 +1205,42 @@ The committed path change is covered.
         )
         self.assertIn("tests/fixtures/001-partial-workflow-fix", workflow)
         self.assertIn("tests/fixtures/002-incapable-validation-command", workflow)
-        self.assertIn('test "$PROOFRAIL_VERDICT" = "partially_verified"', workflow)
-        self.assertIn('test "$PROOFRAIL_VERDICT" = "verified"', workflow)
-        self.assertIn('test -f "$PROOFRAIL_RESULT_PATH"', workflow)
-        for claim_id in (
-            "github-actions-proofrail-verify-action-yml-modified",
-            "github-actions-proofrail-verify-run-py-modified",
-            "github-workflows-proofrail-fixtures-yml-modified",
-            "proofrail-claim-md-modified",
-            "readme-md-modified",
-            "src-proofrail-verifier-init-py-modified",
-            "src-proofrail-verifier-claim-checking-py-added",
-            "src-proofrail-verifier-cli-py-modified",
-            "tests-action-test-action-py-modified",
-            "tests-claim-checking-test-check-claims-py-added",
-            "tests-end-to-end-test-draft-claims-action-py-modified",
+        contract_path = REPOSITORY_ROOT / "contracts" / "step-14.yml"
+        self.assertIn("contracts/step-14.yml", workflow)
+        preflight = runpy.run_path(
+            str(REPOSITORY_ROOT / "scripts" / "proofrail_step_preflight.py")
+        )
+        raw_contract = preflight["parse_bounded_yaml"](
+            contract_path.read_text(encoding="utf-8"), contract=True
+        )
+        schema = json.loads(
+            (REPOSITORY_ROOT / "contracts" / "step-contract.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        contract = preflight["validate_contract"](raw_contract, schema)
+        reason, offending = preflight["validate_contract_source"](
+            contract,
+            "contracts/step-14.yml",
+            preflight["parse_bounded_yaml"](workflow, contract=False),
+            workflow,
+            (REPOSITORY_ROOT / "scripts" / "proofrail_step_preflight.py").read_text(
+                encoding="utf-8"
+            ),
+        )
+        self.assertIsNone(reason, (reason, offending))
+        for claim_id in contract["expectations"]["claim-statuses"]:
+            self.assertNotIn(json.dumps(claim_id), workflow)
+        for key in (
+            "claim-statuses",
+            "overall-verdict",
+            "policy-accepted",
+            "allowed-statuses-source",
+            "exceptions-applied",
+            "fixture-verdicts",
         ):
-            self.assertIn(f'"{claim_id}": "verified"', workflow)
-        self.assertIn('test "$PROOFRAIL_POLICY_ACCEPTED" = "true"', workflow)
-        self.assertIn('test -f "$PROOFRAIL_POLICY_RESULT_PATH"', workflow)
-        self.assertIn('decision["rule"] == "claims.allowed-statuses"', workflow)
-        self.assertNotIn("exceptions.", workflow)
-        self.assertNotIn("workflow-policy-wired", workflow)
+            self.assertIn(f'["{key}"]', workflow)
+        self.assertNotIn("expected = {", workflow)
 
 
 if __name__ == "__main__":
