@@ -1045,10 +1045,26 @@ Do not run claim text.
         self.assertIn("tests/fixtures/001-partial-workflow-fix", workflow)
         self.assertIn("tests/fixtures/002-incapable-validation-command", workflow)
         self.assertIn('test "$PROOFRAIL_VERDICT" = "partially_verified"', workflow)
+        self.assertIn('test "$PROOFRAIL_VERDICT" = "verified"', workflow)
         self.assertIn('test -f "$PROOFRAIL_RESULT_PATH"', workflow)
-        self.assertIn('"workflow-policy-wired": "unsupported"', workflow)
+        for claim_id in (
+            "proofrail-claim-md-modified",
+            "proofrail-policy-yml-modified",
+            "readme-md-modified",
+            "src-proofrail-verifier-init-py-modified",
+            "src-proofrail-verifier-claim-drafting-py-added",
+            "src-proofrail-verifier-cli-py-modified",
+            "src-proofrail-verifier-git-source-py-modified",
+            "tests-claim-drafting-test-draft-claims-py-added",
+            "tests-end-to-end-test-draft-claims-action-py-added",
+            "tests-policy-test-policy-py-modified",
+        ):
+            self.assertIn(f'"{claim_id}": "verified"', workflow)
         self.assertIn('test "$PROOFRAIL_POLICY_ACCEPTED" = "true"', workflow)
         self.assertIn('test -f "$PROOFRAIL_POLICY_RESULT_PATH"', workflow)
+        self.assertIn('decision["rule"] == "claims.allowed-statuses"', workflow)
+        self.assertNotIn("exceptions.", workflow)
+        self.assertNotIn("workflow-policy-wired", workflow)
 
 
 if __name__ == "__main__":
