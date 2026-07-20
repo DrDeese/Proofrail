@@ -20,12 +20,22 @@ inputs:
   policy-file:
     description: Optional workspace-relative bounded Proofrail acceptance policy
     required: false
+  check-claims:
+    description: Check claim path coverage before Git-change verification (false or true)
+    required: false
+    default: "false"
   format:
     description: Result format printed to the action log (json or markdown)
     required: false
     default: json
 
 outputs:
+  claims-synchronized:
+    description: Whether the completed claim freshness check found exact coverage
+    value: ${{ steps.verify.outputs.claims-synchronized }}
+  claim-check-json-path:
+    description: Workspace-relative path to the deterministic claim-check JSON result
+    value: ${{ steps.verify.outputs.claim-check-json-path }}
   overall-verdict:
     description: Deterministically aggregated Proofrail verdict
     value: ${{ steps.verify.outputs.overall-verdict }}
@@ -51,5 +61,6 @@ runs:
         INPUT_HEAD: ${{ inputs.head }}
         INPUT_CLAIM_FILE: ${{ inputs.claim-file }}
         INPUT_POLICY_FILE: ${{ inputs.policy-file }}
+        INPUT_CHECK_CLAIMS: ${{ inputs.check-claims }}
         INPUT_FORMAT: ${{ inputs.format }}
       run: python3 "$GITHUB_ACTION_PATH/run.py"
