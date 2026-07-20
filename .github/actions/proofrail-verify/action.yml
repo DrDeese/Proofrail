@@ -1,10 +1,22 @@
 name: Proofrail verify
-description: Run the offline Proofrail verifier for a supported local case directory
+description: Verify a prepared Proofrail case or a local committed Git change
 
 inputs:
   case-directory:
     description: Workspace-relative supported Proofrail case directory
-    required: true
+    required: false
+  repo:
+    description: Workspace-relative Git repository for change verification
+    required: false
+  base:
+    description: Exact base commit or ref for change verification
+    required: false
+  head:
+    description: Exact head commit or ref for change verification
+    required: false
+  claim-file:
+    description: Workspace-relative explicit Proofrail completion-claim file
+    required: false
   format:
     description: Result format printed to the action log (json or markdown)
     required: false
@@ -25,5 +37,9 @@ runs:
       shell: bash
       env:
         INPUT_CASE_DIRECTORY: ${{ inputs.case-directory }}
+        INPUT_REPO: ${{ inputs.repo }}
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_HEAD: ${{ inputs.head }}
+        INPUT_CLAIM_FILE: ${{ inputs.claim-file }}
         INPUT_FORMAT: ${{ inputs.format }}
       run: python3 "$GITHUB_ACTION_PATH/run.py"

@@ -52,6 +52,21 @@ The local composite action runs the same offline verifier, writes deterministic 
     format: json
 ```
 
+The same action can prepare and verify an exact committed Git range without an intermediate case directory:
+
+```yaml
+- uses: ./.github/actions/proofrail-verify
+  id: proofrail
+  with:
+    repo: .
+    base: ${{ github.event.pull_request.base.sha }}
+    head: ${{ github.event.pull_request.head.sha }}
+    claim-file: .proofrail/claim.md
+    format: json
+```
+
+The two modes are mutually exclusive. Prepared-case mode requires only `case-directory`; Git-change mode requires all four of `repo`, `base`, `head`, and `claim-file`. Every supplied path must stay inside `GITHUB_WORKSPACE`, and the action rejects missing, partial, or mixed mode inputs before verification.
+
 Outputs are available as `steps.proofrail.outputs.overall-verdict` and `steps.proofrail.outputs.result-json-path`. A completed `verified`, `partially_verified`, `unsupported`, `contradicted`, or `human_review_required` result succeeds; usage, case/schema, verification, and output failures return nonzero status.
 
 ## Proof boundary
