@@ -69,6 +69,47 @@ The two modes are mutually exclusive. Prepared-case mode requires only `case-dir
 
 Outputs are available as `steps.proofrail.outputs.overall-verdict` and `steps.proofrail.outputs.result-json-path`. A completed `verified`, `partially_verified`, `unsupported`, `contradicted`, or `human_review_required` result succeeds; usage, case/schema, verification, and output failures return nonzero status.
 
+## Enforce an acceptance policy
+
+Evidence verification and team acceptance are separate operations. `enforce` evaluates a completed Proofrail JSON result against a bounded, non-executable YAML policy:
+
+```sh
+export PYTHONPATH=src
+python3 -m proofrail_verifier enforce \
+  --result proofrail-result.json \
+  --policy .proofrail/policy.yml
+```
+
+The policy must use version `1`, list default allowed claim statuses and overall verdicts, and may override an exact claim ID. Unknown keys, empty lists, aliases, tags, interpolation, includes, scripts, expressions, globs, and regexes are unsupported. A policy rejection exits `1`; usage, invalid input, evaluation, and output failures exit `2`, `3`, `4`, and `5` respectively.
+
+Policy enforcement can follow `verify-change` directly through the same evaluator:
+
+```sh
+python3 -m proofrail_verifier verify-change \
+  --repo . \
+  --base "$BASE_SHA" \
+  --head "$HEAD_SHA" \
+  --claim-file .proofrail/claim.md \
+  --policy .proofrail/policy.yml
+```
+
+With `--policy`, the selected format and optional new `--output` path apply to the policy decision. Without `--policy`, all existing `verify-change` behavior is unchanged.
+
+The GitHub Action accepts the same optional policy and exposes both verification and policy outputs:
+
+```yaml
+- uses: ./.github/actions/proofrail-verify
+  id: proofrail
+  with:
+    repo: .
+    base: ${{ github.event.pull_request.base.sha }}
+    head: ${{ github.event.pull_request.head.sha }}
+    claim-file: .proofrail/claim.md
+    policy-file: .proofrail/policy.yml
+```
+
+The outputs are `overall-verdict`, `result-json-path`, `policy-accepted`, and `policy-result-json-path`. Without `policy-file`, completed verifier verdicts still succeed. With a policy, both JSON reports are written and both Markdown reports are appended to the job summary; acceptance exits `0`, rejection exits `1`, and verifier or policy process failures retain their distinct error codes.
+
 ## Proof boundary
 
 This is an offline deterministic prototype. It proves only what the supported case artifacts and structured evidence can establish; a recorded successful command is not treated as proof of the outcome it claimed to test.
