@@ -11,6 +11,11 @@ from typing import Sequence
 
 from .artifacts import ArtifactInspectionError
 from .change_verification import verify_change
+from .claim_drafting import (
+    ClaimGenerationFailure,
+    draft_claims,
+    portable_output_path,
+)
 from .evaluation import VerificationError, evaluate_case
 from .loading import FixtureLoadError, load_case_directory
 from .preparation import (
@@ -58,6 +63,14 @@ def _parser() -> argparse.ArgumentParser:
     change.add_argument("--output", type=Path)
     change.add_argument("--keep-case", type=Path)
     change.add_argument("--policy", type=Path)
+    draft = commands.add_parser(
+        "draft-claims", help="draft path claims from a local committed Git range"
+    )
+    draft.add_argument("--repo", type=Path, required=True)
+    draft.add_argument("--base", required=True)
+    draft.add_argument("--head", required=True)
+    draft.add_argument("--output", type=Path, required=True)
+    draft.add_argument("--case-title")
     enforce = commands.add_parser(
         "enforce", help="evaluate an acceptance policy against a completed result"
     )
@@ -198,6 +211,37 @@ def _verify_change(arguments: argparse.Namespace) -> int:
     )
 
 
+def _draft_claims(arguments: argparse.Namespace) -> int:
+    try:
+        result = draft_claims(
+            arguments.repo,
+            arguments.base,
+            arguments.head,
+            arguments.output,
+            case_title=arguments.case_title,
+        )
+    except InvalidPreparationInput as error:
+        print(f"proofrail: invalid claim-drafting input: {error}", file=sys.stderr)
+        return 3
+    except ClaimGenerationFailure as error:
+        print(f"proofrail: claim generation failed: {error}", file=sys.stderr)
+        return 4
+    except PreparationFailure as error:
+        print(f"proofrail: claim generation failed: {error}", file=sys.stderr)
+        return 4
+    except OutputWriteFailure as error:
+        print(f"proofrail: output write failed: {error}", file=sys.stderr)
+        return 5
+    except KeyboardInterrupt:
+        print("proofrail: claim generation failed: interrupted", file=sys.stderr)
+        return 4
+    print(f"base sha: {result.base_sha}")
+    print(f"head sha: {result.head_sha}")
+    print(f"atomic claims: {result.claim_count}")
+    print(f"output: {portable_output_path(arguments.output)}")
+    return 0
+
+
 def _evaluate_and_publish_policy(
     result: dict[str, object],
     policy_path: Path,
@@ -260,6 +304,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _prepare(arguments)
     if arguments.command == "verify-change":
         return _verify_change(arguments)
+    if arguments.command == "draft-claims":
+        return _draft_claims(arguments)
     if arguments.command == "enforce":
         return _enforce(arguments)
     return _verify(arguments)

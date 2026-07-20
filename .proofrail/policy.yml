@@ -6,9 +6,4 @@ claims:
 
 overall:
   allowed-verdicts:
-    - partially_verified
-
-exceptions:
-  - claim-id: workflow-policy-wired
-    allowed-statuses:
-      - unsupported
+    - verified

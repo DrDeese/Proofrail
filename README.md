@@ -149,6 +149,24 @@ Supported structured changes are `added`, `modified`, `deleted`, `present`, and 
 
 The generated directory contains `case.json`, committed base/head artifacts for claim-relevant paths, changed-file and commit metadata, the exact binary-capable Git patch, the verbatim claim source, and an exact schema snapshot. Preparation refuses existing output directories and output paths inside the source repository, builds in a sibling temporary directory, and publishes only a complete case. Commit identities are recorded but not externally authenticated, and the command does not infer test, deployment, workflow-run, browser, merge, or other external outcomes.
 
+## Draft path claims from local Git
+
+`draft-claims` creates the strict completion-claim file for every path changed in an exact committed range. It emits only canonical `added`, `modified`, and `deleted` path statements; a rename is deliberately represented as one deletion and one addition. It does not infer intent, behavior, correctness, test results, deployment state, workflow execution, or merge status.
+
+```sh
+export PYTHONPATH=src
+python3 -m proofrail_verifier draft-claims \
+  --repo . \
+  --base main \
+  --head HEAD \
+  --output /tmp/completion-claim.md \
+  --case-title "Step 12 artifact changes"
+```
+
+The output must be a new file outside the source repository. Claims are ordered by the UTF-8 bytes of their repository-relative paths. IDs use a readable lowercase path-and-change slug; normalization collisions and long slugs receive a bounded deterministic SHA-256 suffix. The command reads committed trees only, disables Git lazy fetching and replacement objects, ignores dirty working-tree content, disables rename detection, refuses unsafe path or title data, and publishes the complete file atomically without overwriting an existing path.
+
+The generated file works directly as `--claim-file` input to `prepare-case`, `verify-change`, and the Git-change mode of the local GitHub Action. Successful drafting exits `0`; command-line usage exits `2`; invalid repositories, refs, ranges, source structures, paths, or titles exit `3`; claim-generation failures exit `4`; and output publication failures exit `5`.
+
 ## Verify a local Git change end to end
 
 `verify-change` composes the same case preparation and verifier in one offline command. The generated case lives in a secure temporary directory and is removed after verification unless `--keep-case` names a new destination outside the source repository.
