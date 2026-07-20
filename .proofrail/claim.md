@@ -1,12 +1,12 @@
 # Completion claim
 
-Step 14 artifact changes
+Step 15 artifact changes
 
 ## Atomic claims
 
-- id: codex-skills-proofrail-step-preflight-skill-md-added
-  statement: .codex/skills/proofrail-step-preflight/SKILL.md was added.
-  expected-path: .codex/skills/proofrail-step-preflight/SKILL.md
+- id: codex-skills-proofrail-scope-escalation-skill-md-added
+  statement: .codex/skills/proofrail-scope-escalation/SKILL.md was added.
+  expected-path: .codex/skills/proofrail-scope-escalation/SKILL.md
   expected-change: added
 
 - id: github-workflows-proofrail-fixtures-yml-modified
@@ -24,29 +24,9 @@ Step 14 artifact changes
   expected-path: README.md
   expected-change: modified
 
-- id: contracts-readme-md-added
-  statement: contracts/README.md was added.
-  expected-path: contracts/README.md
-  expected-change: added
-
-- id: contracts-step-13-yml-added
-  statement: contracts/step-13.yml was added.
-  expected-path: contracts/step-13.yml
-  expected-change: added
-
-- id: contracts-step-14-yml-added
-  statement: contracts/step-14.yml was added.
-  expected-path: contracts/step-14.yml
-  expected-change: added
-
-- id: contracts-step-contract-schema-json-added
-  statement: contracts/step-contract.schema.json was added.
-  expected-path: contracts/step-contract.schema.json
-  expected-change: added
-
-- id: scripts-proofrail-step-preflight-py-added
-  statement: scripts/proofrail_step_preflight.py was added.
-  expected-path: scripts/proofrail_step_preflight.py
+- id: contracts-step-15-yml-added
+  statement: contracts/step-15.yml was added.
+  expected-path: contracts/step-15.yml
   expected-change: added
 
 - id: tests-action-test-action-py-modified
@@ -54,7 +34,7 @@ Step 14 artifact changes
   expected-path: tests/action/test_action.py
   expected-change: modified
 
-- id: tests-preflight-test-step-preflight-py-added
-  statement: tests/preflight/test_step_preflight.py was added.
-  expected-path: tests/preflight/test_step_preflight.py
+- id: tests-skills-test-scope-escalation-skill-py-added
+  statement: tests/skills/test_scope_escalation_skill.py was added.
+  expected-path: tests/skills/test_scope_escalation_skill.py
   expected-change: added
