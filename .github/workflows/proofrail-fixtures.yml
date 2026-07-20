@@ -67,41 +67,66 @@ jobs:
           head: ${{ github.event.pull_request.head.sha }}
           claim-file: .proofrail/claim.md
           policy-file: .proofrail/policy.yml
+          check-claims: true
           format: json
       - name: Assert dogfood result
         shell: bash
         env:
           PROOFRAIL_VERDICT: ${{ steps.proofrail.outputs.overall-verdict }}
           PROOFRAIL_RESULT_PATH: ${{ steps.proofrail.outputs.result-json-path }}
+          PROOFRAIL_CLAIMS_SYNCHRONIZED: ${{ steps.proofrail.outputs.claims-synchronized }}
+          PROOFRAIL_CLAIM_CHECK_PATH: ${{ steps.proofrail.outputs.claim-check-json-path }}
           PROOFRAIL_POLICY_ACCEPTED: ${{ steps.proofrail.outputs.policy-accepted }}
           PROOFRAIL_POLICY_RESULT_PATH: ${{ steps.proofrail.outputs.policy-result-json-path }}
         run: |
+          test "$PROOFRAIL_CLAIMS_SYNCHRONIZED" = "true"
+          test -f "$PROOFRAIL_CLAIM_CHECK_PATH"
           test "$PROOFRAIL_VERDICT" = "verified"
           test -f "$PROOFRAIL_RESULT_PATH"
           test "$PROOFRAIL_POLICY_ACCEPTED" = "true"
           test -f "$PROOFRAIL_POLICY_RESULT_PATH"
-          python3 - "$PROOFRAIL_RESULT_PATH" "$PROOFRAIL_POLICY_RESULT_PATH" <<'PY'
+          python3 - "$PROOFRAIL_CLAIM_CHECK_PATH" "$PROOFRAIL_RESULT_PATH" "$PROOFRAIL_POLICY_RESULT_PATH" <<'PY'
           import json
           import sys
 
-          with open(sys.argv[1], encoding="utf-8") as source:
-              result = json.load(source)
-          statuses = {claim["claim_id"]: claim["status"] for claim in result["claims"]}
           expected = {
+              "github-actions-proofrail-verify-action-yml-modified": "verified",
+              "github-actions-proofrail-verify-run-py-modified": "verified",
+              "github-workflows-proofrail-fixtures-yml-modified": "verified",
               "proofrail-claim-md-modified": "verified",
-              "proofrail-policy-yml-modified": "verified",
               "readme-md-modified": "verified",
               "src-proofrail-verifier-init-py-modified": "verified",
-              "src-proofrail-verifier-claim-drafting-py-added": "verified",
+              "src-proofrail-verifier-claim-checking-py-added": "verified",
               "src-proofrail-verifier-cli-py-modified": "verified",
-              "src-proofrail-verifier-git-source-py-modified": "verified",
-              "tests-claim-drafting-test-draft-claims-py-added": "verified",
-              "tests-end-to-end-test-draft-claims-action-py-added": "verified",
-              "tests-policy-test-policy-py-modified": "verified",
+              "tests-action-test-action-py-modified": "verified",
+              "tests-claim-checking-test-check-claims-py-added": "verified",
+              "tests-end-to-end-test-draft-claims-action-py-modified": "verified",
           }
+          with open(sys.argv[1], encoding="utf-8") as source:
+              claim_check = json.load(source)
+          if claim_check["synchronized"] is not True:
+              raise SystemExit(f"unexpected Proofrail claim check: {claim_check!r}")
+          if claim_check["changed_path_count"] != len(expected):
+              raise SystemExit(f"unexpected changed-path count: {claim_check!r}")
+          if claim_check["claim_predicate_count"] != len(expected):
+              raise SystemExit(f"unexpected claim-predicate count: {claim_check!r}")
+          if any(claim_check[key] for key in ("missing", "stale", "conflicts", "duplicates")):
+              raise SystemExit(f"unexpected Proofrail claim drift: {claim_check!r}")
+          matched = {
+              item["claim_id"]: item["change"] for item in claim_check["matched"]
+          }
+          expected_changes = {
+              claim_id: "added" if claim_id.endswith("-added") else "modified"
+              for claim_id in expected
+          }
+          if matched != expected_changes:
+              raise SystemExit(f"unexpected Proofrail claim coverage: {matched!r}")
+          with open(sys.argv[2], encoding="utf-8") as source:
+              result = json.load(source)
+          statuses = {claim["claim_id"]: claim["status"] for claim in result["claims"]}
           if statuses != expected:
               raise SystemExit(f"unexpected Proofrail statuses: {statuses!r}")
-          with open(sys.argv[2], encoding="utf-8") as source:
+          with open(sys.argv[3], encoding="utf-8") as source:
               policy = json.load(source)
           if policy["accepted"] is not True:
               raise SystemExit(f"unexpected Proofrail policy result: {policy!r}")

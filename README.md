@@ -62,12 +62,15 @@ The same action can prepare and verify an exact committed Git range without an i
     base: ${{ github.event.pull_request.base.sha }}
     head: ${{ github.event.pull_request.head.sha }}
     claim-file: .proofrail/claim.md
+    check-claims: true
     format: json
 ```
 
 The two modes are mutually exclusive. Prepared-case mode requires only `case-directory`; Git-change mode requires all four of `repo`, `base`, `head`, and `claim-file`. Every supplied path must stay inside `GITHUB_WORKSPACE`, and the action rejects missing, partial, or mixed mode inputs before verification.
 
-Outputs are available as `steps.proofrail.outputs.overall-verdict` and `steps.proofrail.outputs.result-json-path`. A completed `verified`, `partially_verified`, `unsupported`, `contradicted`, or `human_review_required` result succeeds; usage, case/schema, verification, and output failures return nonzero status.
+When `check-claims` is `true`, Git-change mode first checks that the claim file covers the exact range once per changed path. It exposes `claims-synchronized` and `claim-check-json-path`; synchronized claims proceed to verification, while completed drift writes its JSON and Markdown reports, exits `1`, and does not run verification or policy enforcement. The default is `false`, and prepared-case mode rejects `true` because it has no Git range.
+
+Verification outputs remain available as `steps.proofrail.outputs.overall-verdict` and `steps.proofrail.outputs.result-json-path`. A completed `verified`, `partially_verified`, `unsupported`, `contradicted`, or `human_review_required` result succeeds; usage, case/schema, verification, and output failures return nonzero status.
 
 ## Enforce an acceptance policy
 
@@ -166,6 +169,23 @@ python3 -m proofrail_verifier draft-claims \
 The output must be a new file outside the source repository. Claims are ordered by the UTF-8 bytes of their repository-relative paths. IDs use a readable lowercase path-and-change slug; normalization collisions and long slugs receive a bounded deterministic SHA-256 suffix. The command reads committed trees only, disables Git lazy fetching and replacement objects, ignores dirty working-tree content, disables rename detection, refuses unsafe path or title data, and publishes the complete file atomically without overwriting an existing path.
 
 The generated file works directly as `--claim-file` input to `prepare-case`, `verify-change`, and the Git-change mode of the local GitHub Action. Successful drafting exits `0`; command-line usage exits `2`; invalid repositories, refs, ranges, source structures, paths, or titles exit `3`; claim-generation failures exit `4`; and output publication failures exit `5`.
+
+## Check claim freshness and path coverage
+
+`check-claims` compares only each claim's structured `(expected-path, expected-change)` predicate with the exact committed paths in a Git range. IDs and statement wording do not affect matching, and this command does not verify evidence or evaluate acceptance policy.
+
+```sh
+export PYTHONPATH=src
+python3 -m proofrail_verifier check-claims \
+  --repo . \
+  --base main \
+  --head HEAD \
+  --claim-file .proofrail/claim.md
+```
+
+Every added, modified, or deleted path must have exactly one matching predicate. Renames are deliberately checked as deletion of the old path plus addition of the new path. A changed path without coverage is `missing`; a predicate for an unchanged path is `stale`; a wrong change type is a `conflict`; and repeated path/change predicates are `duplicates`. `present` and `absent` predicates are never inferred from a diff.
+
+JSON is the default and deterministic Markdown is available with `--format markdown`. `--output` atomically writes a new report outside the source repository without overwriting. Synchronized coverage exits `0`; completed drift exits `1`; usage, invalid input, comparison, and output-write failures exit `2`, `3`, `4`, and `5` respectively. The command resolves exact commits, reads committed trees only, ignores working-tree changes, disables rename detection, lazy fetching, and replacement objects, and never executes claim text or repository code.
 
 ## Verify a local Git change end to end
 

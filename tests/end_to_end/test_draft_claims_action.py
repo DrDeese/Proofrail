@@ -95,6 +95,7 @@ class DraftClaimsActionIntegrationTests(unittest.TestCase):
                     "INPUT_HEAD": "HEAD",
                     "INPUT_CLAIM_FILE": "generated-claims.md",
                     "INPUT_POLICY_FILE": "",
+                    "INPUT_CHECK_CLAIMS": "true",
                     "INPUT_FORMAT": "json",
                 }
             )
@@ -109,15 +110,26 @@ class DraftClaimsActionIntegrationTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            result = json.loads(completed.stdout)
-            self.assertEqual(result["overall_verdict"], "verified")
-            self.assertTrue(all(claim["status"] == "verified" for claim in result["claims"]))
             outputs = dict(
                 line.split("=", 1)
                 for line in github_output.read_text(encoding="utf-8").splitlines()
             )
+            self.assertEqual(outputs["claims-synchronized"], "true")
+            claim_check = json.loads(
+                (workspace / outputs["claim-check-json-path"]).read_text(encoding="utf-8")
+            )
+            self.assertTrue(claim_check["synchronized"])
+            result = json.loads(
+                (workspace / outputs["result-json-path"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(result["overall_verdict"], "verified")
+            self.assertTrue(all(claim["status"] == "verified" for claim in result["claims"]))
             self.assertEqual(outputs["overall-verdict"], "verified")
             self.assertTrue((workspace / outputs["result-json-path"]).is_file())
+            self.assertIn(
+                "# Proofrail claim freshness",
+                github_summary.read_text(encoding="utf-8"),
+            )
             self.assertIn(
                 "**Overall verdict:** `verified`",
                 github_summary.read_text(encoding="utf-8"),

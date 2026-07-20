@@ -34,6 +34,7 @@ class ActionConfiguration:
     head: str | None = None
     claim_file: Path | None = None
     policy_file: Path | None = None
+    check_claims: bool = False
 
 
 def _required(environment: Mapping[str, str], name: str) -> str:
@@ -92,6 +93,10 @@ def _configuration(environment: Mapping[str, str]) -> ActionConfiguration:
 
     case_value = _optional(environment, "INPUT_CASE_DIRECTORY")
     policy_value = _optional(environment, "INPUT_POLICY_FILE")
+    check_claims_value = _optional(environment, "INPUT_CHECK_CLAIMS") or "false"
+    if check_claims_value not in ("false", "true"):
+        raise ActionUsageError("check-claims must be 'false' or 'true'")
+    check_claims = check_claims_value == "true"
     policy_file = (
         _workspace_path(workspace, policy_value, "policy-file")
         if policy_value
@@ -104,6 +109,10 @@ def _configuration(environment: Mapping[str, str]) -> ActionConfiguration:
             "case-directory cannot be combined with repo, base, head, or claim-file"
         )
     if case_value:
+        if check_claims:
+            raise ActionUsageError(
+                "check-claims true requires Git-change mode with an exact range"
+            )
         return ActionConfiguration(
             workspace=workspace,
             mode="prepared-case",
@@ -114,6 +123,7 @@ def _configuration(environment: Mapping[str, str]) -> ActionConfiguration:
                 workspace, case_value, "case-directory"
             ),
             policy_file=policy_file,
+            check_claims=False,
         )
     if len(supplied_git) != len(GIT_INPUTS):
         if supplied_git:
@@ -139,6 +149,7 @@ def _configuration(environment: Mapping[str, str]) -> ActionConfiguration:
             workspace, git_values["INPUT_CLAIM_FILE"], "claim-file"
         ),
         policy_file=policy_file,
+        check_claims=check_claims,
     )
 
 
@@ -207,7 +218,12 @@ def _prepared_result(configuration: ActionConfiguration) -> tuple[dict[str, Any]
     return result, bundle.fixture_dir
 
 
-def _git_change_result(configuration: ActionConfiguration) -> tuple[dict[str, Any], Path]:
+def _git_change_result(
+    configuration: ActionConfiguration,
+    *,
+    exact_base: str | None = None,
+    exact_head: str | None = None,
+) -> tuple[dict[str, Any], Path]:
     from proofrail_verifier.change_verification import verify_change
     from proofrail_verifier.preparation_errors import (
         InvalidPreparationInput,
@@ -222,8 +238,8 @@ def _git_change_result(configuration: ActionConfiguration) -> tuple[dict[str, An
     try:
         completed = verify_change(
             configuration.repository,
-            configuration.base,
-            configuration.head,
+            exact_base if exact_base is not None else configuration.base,
+            exact_head if exact_head is not None else configuration.head,
             configuration.claim_file,
         )
     except InvalidPreparationInput as error:
@@ -235,6 +251,35 @@ def _git_change_result(configuration: ActionConfiguration) -> tuple[dict[str, An
     except KeyboardInterrupt as error:
         raise ActionVerificationError("interrupted") from error
     return completed.result, configuration.repository
+
+
+def _claim_check_result(configuration: ActionConfiguration) -> dict[str, Any]:
+    from proofrail_verifier.claim_checking import (
+        ClaimComparisonFailure,
+        check_claims,
+    )
+    from proofrail_verifier.preparation_errors import (
+        InvalidPreparationInput,
+        PreparationFailure,
+    )
+
+    assert configuration.repository is not None
+    assert configuration.base is not None
+    assert configuration.head is not None
+    assert configuration.claim_file is not None
+    try:
+        return check_claims(
+            configuration.repository,
+            configuration.base,
+            configuration.head,
+            configuration.claim_file,
+        )
+    except InvalidPreparationInput as error:
+        raise InvalidCaseError(str(error)) from error
+    except (ClaimComparisonFailure, PreparationFailure) as error:
+        raise ActionVerificationError(str(error)) from error
+    except KeyboardInterrupt as error:
+        raise ActionVerificationError("interrupted") from error
 
 
 class InvalidCaseError(ValueError):
@@ -260,6 +305,10 @@ def main(environment: Mapping[str, str] | None = None) -> int:
     sys.path.insert(0, str(configuration.workspace / "src"))
     try:
         from proofrail_verifier.rendering import render_json, render_markdown
+        from proofrail_verifier.claim_checking import (
+            render_claim_check_json,
+            render_claim_check_markdown,
+        )
         from proofrail_verifier.policy import (
             PolicyEvaluationError,
             PolicyInputError,
@@ -275,11 +324,94 @@ def main(environment: Mapping[str, str] | None = None) -> int:
         print(f"proofrail action: verification failed: {error}", file=sys.stderr)
         return 4
 
+    claim_check: dict[str, Any] | None = None
+    claim_check_json: str | None = None
+    claim_check_markdown: str | None = None
+    if configuration.check_claims:
+        try:
+            claim_check = _claim_check_result(configuration)
+            claim_check_json = render_claim_check_json(claim_check)
+            claim_check_markdown = render_claim_check_markdown(claim_check)
+        except InvalidCaseError as error:
+            print(f"proofrail action: invalid change input: {error}", file=sys.stderr)
+            return 3
+        except (ActionVerificationError, KeyError, TypeError, ValueError, UnicodeError) as error:
+            print(f"proofrail action: claim comparison failed: {error}", file=sys.stderr)
+            return 4
+
+        assert configuration.repository is not None
+        claim_check_directory = configuration.workspace / ".proofrail" / "results"
+        claim_check_path = claim_check_directory / (
+            f"claim-check-{claim_check['base_sha'][:12]}-"
+            f"{claim_check['head_sha'][:12]}.json"
+        )
+        relative_claim_check_path = claim_check_path.relative_to(
+            configuration.workspace
+        ).as_posix()
+        try:
+            resolved_claim_check_path = claim_check_path.resolve(strict=False)
+            if not _inside(resolved_claim_check_path, configuration.workspace):
+                raise OSError("claim-check result path resolves outside GITHUB_WORKSPACE")
+            metadata_candidates = (
+                configuration.output_file.resolve(strict=False),
+                configuration.summary_file.resolve(strict=False),
+            )
+            for destination in metadata_candidates:
+                if _inside(destination, configuration.repository):
+                    raise OSError(
+                        "refusing to write action metadata inside the selected source"
+                    )
+            if metadata_candidates[0] == metadata_candidates[1]:
+                raise OSError(
+                    "GITHUB_OUTPUT and GITHUB_STEP_SUMMARY must be different files"
+                )
+            if resolved_claim_check_path in metadata_candidates:
+                raise OSError("action metadata path collides with claim-check JSON")
+            _metadata_destination(configuration.output_file, "GITHUB_OUTPUT")
+            _metadata_destination(configuration.summary_file, "GITHUB_STEP_SUMMARY")
+            if claim_check_path.exists():
+                raise OSError(
+                    "claim-check result path already exists; refusing to overwrite source"
+                )
+            claim_check_directory.mkdir(parents=True, exist_ok=True)
+            _write_atomic(claim_check_path, claim_check_json)
+            _append(configuration.summary_file, claim_check_markdown)
+            synchronized_value = "true" if claim_check["synchronized"] else "false"
+            _append(
+                configuration.output_file,
+                "claims-synchronized="
+                f"{_safe_output_value('claims-synchronized', synchronized_value)}\n"
+                "claim-check-json-path="
+                f"{_safe_output_value('claim-check-json-path', relative_claim_check_path)}\n",
+            )
+            sys.stdout.write(
+                claim_check_json
+                if configuration.result_format == "json"
+                else claim_check_markdown
+            )
+        except (OSError, UnicodeError) as error:
+            print(f"proofrail action: output error: {error}", file=sys.stderr)
+            return 5
+        if not claim_check["synchronized"]:
+            return 1
+
     try:
         if configuration.mode == "prepared-case":
             result, protected_directory = _prepared_result(configuration)
         else:
-            result, protected_directory = _git_change_result(configuration)
+            result, protected_directory = _git_change_result(
+                configuration,
+                exact_base=(
+                    str(claim_check["base_sha"])
+                    if claim_check is not None
+                    else None
+                ),
+                exact_head=(
+                    str(claim_check["head_sha"])
+                    if claim_check is not None
+                    else None
+                ),
+            )
     except InvalidCaseError as error:
         label = "invalid case" if configuration.mode == "prepared-case" else "invalid change input"
         print(f"proofrail action: {label}: {error}", file=sys.stderr)

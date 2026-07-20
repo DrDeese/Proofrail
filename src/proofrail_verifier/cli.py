@@ -16,6 +16,13 @@ from .claim_drafting import (
     draft_claims,
     portable_output_path,
 )
+from .claim_checking import (
+    ClaimComparisonFailure,
+    check_claims,
+    render_claim_check_json,
+    render_claim_check_markdown,
+    write_claim_check_output,
+)
 from .evaluation import VerificationError, evaluate_case
 from .loading import FixtureLoadError, load_case_directory
 from .preparation import (
@@ -71,6 +78,15 @@ def _parser() -> argparse.ArgumentParser:
     draft.add_argument("--head", required=True)
     draft.add_argument("--output", type=Path, required=True)
     draft.add_argument("--case-title")
+    check = commands.add_parser(
+        "check-claims", help="check path claims against a local committed Git range"
+    )
+    check.add_argument("--repo", type=Path, required=True)
+    check.add_argument("--base", required=True)
+    check.add_argument("--head", required=True)
+    check.add_argument("--claim-file", type=Path, required=True)
+    check.add_argument("--format", choices=("json", "markdown"), default="json")
+    check.add_argument("--output", type=Path)
     enforce = commands.add_parser(
         "enforce", help="evaluate an acceptance policy against a completed result"
     )
@@ -242,6 +258,45 @@ def _draft_claims(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _check_claims(arguments: argparse.Namespace) -> int:
+    try:
+        result = check_claims(
+            arguments.repo,
+            arguments.base,
+            arguments.head,
+            arguments.claim_file,
+        )
+        rendered = (
+            render_claim_check_json(result)
+            if arguments.format == "json"
+            else render_claim_check_markdown(result)
+        )
+    except InvalidPreparationInput as error:
+        print(f"proofrail: invalid claim-check input: {error}", file=sys.stderr)
+        return 3
+    except (ClaimComparisonFailure, PreparationFailure) as error:
+        print(f"proofrail: claim comparison failed: {error}", file=sys.stderr)
+        return 4
+    except (KeyError, TypeError, ValueError, UnicodeError) as error:
+        print(f"proofrail: claim comparison failed: {error}", file=sys.stderr)
+        return 4
+    except KeyboardInterrupt:
+        print("proofrail: claim comparison failed: interrupted", file=sys.stderr)
+        return 4
+    try:
+        if arguments.output is None:
+            sys.stdout.write(rendered)
+        else:
+            write_claim_check_output(arguments.output, rendered, arguments.repo)
+    except KeyboardInterrupt:
+        print("proofrail: claim comparison failed: interrupted", file=sys.stderr)
+        return 4
+    except (OutputWriteFailure, OSError, UnicodeError) as error:
+        print(f"proofrail: output write failed: {error}", file=sys.stderr)
+        return 5
+    return 0 if result["synchronized"] else 1
+
+
 def _evaluate_and_publish_policy(
     result: dict[str, object],
     policy_path: Path,
@@ -306,6 +361,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _verify_change(arguments)
     if arguments.command == "draft-claims":
         return _draft_claims(arguments)
+    if arguments.command == "check-claims":
+        return _check_claims(arguments)
     if arguments.command == "enforce":
         return _enforce(arguments)
     return _verify(arguments)

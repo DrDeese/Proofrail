@@ -26,6 +26,11 @@ from proofrail_verifier import (
     render_markdown,
     verify_change,
 )
+from proofrail_verifier.claim_checking import (
+    check_claims,
+    render_claim_check_json,
+    render_claim_check_markdown,
+)
 
 
 class ProofrailActionTests(unittest.TestCase):
@@ -77,6 +82,7 @@ class ProofrailActionTests(unittest.TestCase):
             "INPUT_HEAD",
             "INPUT_CLAIM_FILE",
             "INPUT_POLICY_FILE",
+            "INPUT_CHECK_CLAIMS",
             "INPUT_FORMAT",
             "PYTHONPATH",
         ):
@@ -934,6 +940,155 @@ Do not run claim text.
             self.assertEqual(set(outputs), {"overall-verdict", "result-json-path"})
             self.assertNotIn("acceptance policy", summary.read_text())
 
+    def test_claim_check_success_precedes_verification_and_exposes_six_outputs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-claim-check-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root)
+            repository, claim_file, base, head, _ = self._git_change_source(root, workspace)
+            claim_file.write_text(
+                """# Completion claim
+
+The committed path change is covered.
+
+## Atomic claims
+
+- id: human-chosen-id
+  statement: path with spaces.txt was modified.
+  expected-path: path with spaces.txt
+  expected-change: modified
+""",
+                encoding="utf-8",
+            )
+            policy = workspace / "policy.yml"
+            policy.write_text(
+                self._policy_text(statuses=("verified",), verdicts=("verified",)),
+                encoding="utf-8",
+            )
+            inputs = self._git_inputs(workspace, repository, claim_file, base, head)
+            direct_check = check_claims(repository, base, head, claim_file)
+            direct_cli = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "proofrail_verifier",
+                    "check-claims",
+                    "--repo",
+                    str(repository),
+                    "--base",
+                    base,
+                    "--head",
+                    head,
+                    "--claim-file",
+                    str(claim_file),
+                ],
+                cwd=workspace,
+                env={**os.environ, "PYTHONPATH": str(workspace / "src")},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(direct_cli.returncode, 0, direct_cli.stderr)
+            direct_verification = verify_change(repository, base, head, claim_file)
+            direct_policy = evaluate_policy(direct_verification.result, load_policy(policy))
+            completed, output, summary = self._run(
+                workspace,
+                None,
+                git_inputs=inputs,
+                policy_file="policy.yml",
+                overrides={"INPUT_CHECK_CLAIMS": "true"},
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            outputs = self._outputs(output)
+            self.assertEqual(
+                set(outputs),
+                {
+                    "claims-synchronized",
+                    "claim-check-json-path",
+                    "overall-verdict",
+                    "result-json-path",
+                    "policy-accepted",
+                    "policy-result-json-path",
+                },
+            )
+            self.assertEqual(outputs["claims-synchronized"], "true")
+            self.assertEqual(outputs["overall-verdict"], "verified")
+            self.assertEqual(outputs["policy-accepted"], "true")
+            self.assertEqual(
+                (workspace / outputs["claim-check-json-path"]).read_text(encoding="utf-8"),
+                direct_cli.stdout,
+            )
+            self.assertEqual(direct_cli.stdout, render_claim_check_json(direct_check))
+            expected_stdout = (
+                render_claim_check_json(direct_check)
+                + render_json(direct_verification.result)
+                + render_policy_json(direct_policy)
+            )
+            self.assertEqual(completed.stdout, expected_stdout)
+            expected_summary = (
+                render_claim_check_markdown(direct_check)
+                + render_markdown(direct_verification.result)
+                + "\n"
+                + render_policy_markdown(direct_policy)
+            )
+            self.assertEqual(summary.read_text(encoding="utf-8"), expected_summary)
+            self.assertLess(
+                completed.stdout.index('"synchronized":true'),
+                completed.stdout.index('"overall_verdict":"verified"'),
+            )
+
+    def test_claim_drift_stops_before_verification_and_policy(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-claim-drift-") as temporary:
+            root = Path(temporary)
+            workspace = self._workspace(root)
+            repository, claim_file, base, head, _ = self._git_change_source(root, workspace)
+            malformed_policy = workspace / "policy.yml"
+            malformed_policy.write_text("not a policy\n", encoding="utf-8")
+            shutil.rmtree(workspace / "schemas")
+            completed, output, summary = self._run(
+                workspace,
+                None,
+                git_inputs=self._git_inputs(workspace, repository, claim_file, base, head),
+                policy_file="policy.yml",
+                overrides={"INPUT_CHECK_CLAIMS": "true"},
+            )
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            outputs = self._outputs(output)
+            self.assertEqual(
+                set(outputs), {"claims-synchronized", "claim-check-json-path"}
+            )
+            self.assertEqual(outputs["claims-synchronized"], "false")
+            report = json.loads(
+                (workspace / outputs["claim-check-json-path"]).read_text(encoding="utf-8")
+            )
+            self.assertFalse(report["synchronized"])
+            self.assertTrue(report["stale"])
+            self.assertTrue(report["duplicates"])
+            self.assertNotIn("overall-verdict", outputs)
+            self.assertNotIn("policy-accepted", outputs)
+            self.assertIn("# Proofrail claim freshness", summary.read_text())
+            self.assertNotIn("# Proofrail verification", summary.read_text())
+            self.assertNotIn("# Proofrail acceptance policy", summary.read_text())
+
+    def test_prepared_case_rejects_claim_check_and_false_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-action-claim-mode-") as temporary:
+            workspace = self._workspace(Path(temporary), "001-partial-workflow-fix")
+            rejected, output, summary = self._run(
+                workspace, overrides={"INPUT_CHECK_CLAIMS": "true"}
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn("requires Git-change mode", rejected.stderr)
+            self.assertEqual(output.read_text(), "")
+            self.assertEqual(summary.read_text(), "")
+            unchanged, output, summary = self._run(
+                workspace, overrides={"INPUT_CHECK_CLAIMS": "false"}
+            )
+            self.assertEqual(unchanged.returncode, 0, unchanged.stderr)
+            self.assertEqual(
+                set(self._outputs(output)), {"overall-verdict", "result-json-path"}
+            )
+            self.assertNotIn("claim freshness", summary.read_text())
+
     def test_invalid_policy_and_policy_path_escapes_are_controlled(self) -> None:
         with tempfile.TemporaryDirectory(prefix="proofrail-action-policy-path-") as temporary:
             root = Path(temporary)
@@ -1008,13 +1163,17 @@ Do not run claim text.
         ).read_text(encoding="utf-8")
         self.assertIn("using: composite", action)
         self.assertIn("case-directory:", action)
-        for action_input in ("repo:", "base:", "head:", "claim-file:", "policy-file:"):
+        for action_input in (
+            "repo:", "base:", "head:", "claim-file:", "policy-file:", "check-claims:"
+        ):
             self.assertIn(action_input, action)
         self.assertIn("default: json", action)
         self.assertIn("overall-verdict:", action)
         self.assertIn("result-json-path:", action)
         self.assertIn("policy-accepted:", action)
         self.assertIn("policy-result-json-path:", action)
+        self.assertIn("claims-synchronized:", action)
+        self.assertIn("claim-check-json-path:", action)
         self.assertIn("pull_request:", workflow)
         self.assertRegex(workflow, r"push:\n\s+branches:\n\s+- main")
         self.assertIn("permissions:\n  contents: read", workflow)
@@ -1028,6 +1187,7 @@ Do not run claim text.
         self.assertIn("head: ${{ github.event.pull_request.head.sha }}", workflow)
         self.assertIn("claim-file: .proofrail/claim.md", workflow)
         self.assertIn("policy-file: .proofrail/policy.yml", workflow)
+        self.assertIn("check-claims: true", workflow)
         self.assertNotIn("api.github.com", workflow)
         self.assertNotIn("gh api", workflow)
         uses = re.findall(r"^\s*- uses: (\S+)", workflow, flags=re.MULTILINE)
@@ -1048,16 +1208,17 @@ Do not run claim text.
         self.assertIn('test "$PROOFRAIL_VERDICT" = "verified"', workflow)
         self.assertIn('test -f "$PROOFRAIL_RESULT_PATH"', workflow)
         for claim_id in (
+            "github-actions-proofrail-verify-action-yml-modified",
+            "github-actions-proofrail-verify-run-py-modified",
+            "github-workflows-proofrail-fixtures-yml-modified",
             "proofrail-claim-md-modified",
-            "proofrail-policy-yml-modified",
             "readme-md-modified",
             "src-proofrail-verifier-init-py-modified",
-            "src-proofrail-verifier-claim-drafting-py-added",
+            "src-proofrail-verifier-claim-checking-py-added",
             "src-proofrail-verifier-cli-py-modified",
-            "src-proofrail-verifier-git-source-py-modified",
-            "tests-claim-drafting-test-draft-claims-py-added",
-            "tests-end-to-end-test-draft-claims-action-py-added",
-            "tests-policy-test-policy-py-modified",
+            "tests-action-test-action-py-modified",
+            "tests-claim-checking-test-check-claims-py-added",
+            "tests-end-to-end-test-draft-claims-action-py-modified",
         ):
             self.assertIn(f'"{claim_id}": "verified"', workflow)
         self.assertIn('test "$PROOFRAIL_POLICY_ACCEPTED" = "true"', workflow)
