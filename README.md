@@ -45,44 +45,50 @@ Proofrail does not replace code review or tests. It makes clear what those artif
 
 ## Five-minute quick start
 
-Use Python directly from a clean repository checkout. The repository workflow runs Python 3.11; set the source package path before invoking the real module entry point:
+Install a locally built wheel into a clean virtual environment, then invoke the
+`proofrail` command without `PYTHONPATH`. Proofrail is not published to a
+package index.
 
 ```sh
-export PYTHONPATH=src
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install --no-index --no-deps dist/proofrail_verifier-0.1.0a1-py3-none-any.whl
 
 # Run both deterministic fixtures.
-python3 -m proofrail_verifier verify tests/fixtures/001-partial-workflow-fix
-python3 -m proofrail_verifier verify tests/fixtures/002-incapable-validation-command
+proofrail verify tests/fixtures/001-partial-workflow-fix
+proofrail verify tests/fixtures/002-incapable-validation-command
 ```
+
+For source-checkout development, set `PYTHONPATH=src` and use
+`python3 -m proofrail_verifier` with the same commands.
 
 For an exact local Git range, use the included source repository. These commands create a real temporary output directory and can be run from the repository root:
 
 ```sh
-export PYTHONPATH=src
 export PROOFRAIL_SOURCE_REPO=tests/source_repositories/partial-workflow-fix
 export PROOFRAIL_OUTPUT_DIR="$(mktemp -d)"
 
-python3 -m proofrail_verifier draft-claims \
+proofrail draft-claims \
   --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
   --output "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md" --case-title "Partial workflow fix"
 
-python3 -m proofrail_verifier check-claims \
+proofrail check-claims \
   --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
   --claim-file "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md"
 
-python3 -m proofrail_verifier verify-change \
+proofrail verify-change \
   --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
   --claim-file "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md" \
   --output "$PROOFRAIL_OUTPUT_DIR/proofrail-verification.json"
 
-python3 -m proofrail_verifier enforce \
+proofrail enforce \
   --result "$PROOFRAIL_OUTPUT_DIR/proofrail-verification.json" --policy .proofrail/policy.yml
 ```
 
 For a template against your own repository, replace the explicitly marked placeholders `<repo>`, `<base-sha>`, `<head-sha>`, and `<claim-file>`:
 
 ```sh
-python3 -m proofrail_verifier verify-change \
+proofrail verify-change \
   --repo <repo> --base <base-sha> --head <head-sha> --claim-file <claim-file>
 ```
 
@@ -135,7 +141,11 @@ Proofrail does not authenticate authorship or timestamps, prove deployment state
 
 ## Project status
 
-Proofrail is **Internal Alpha**. It is appropriate for controlled internal repositories, technically capable design partners, and read-only CI evaluation. It is not a turnkey hosted platform, a universal behavioral verifier, or a supported general-availability product. See [project status](docs/PROJECT_STATUS.md).
+Proofrail is **Internal Alpha**. Local build artifacts can be installed for
+controlled internal repositories, technically capable design partners, and
+read-only CI evaluation. It is not published to a package index, a turnkey
+hosted platform, a universal behavioral verifier, or a supported
+general-availability product. See [project status](docs/PROJECT_STATUS.md).
 
 ## Pilot guidance
 

@@ -60,20 +60,40 @@ class PublicDocumentationTests(unittest.TestCase):
             "enforce",
         ):
             self.assertIn(command, help_text)
-            self.assertIn(f"proofrail_verifier {command}", self.readme + self.quickstart)
-        self.assertNotRegex(self.readme + self.quickstart, r"\b(pip install|brew install|npm install|docker pull)\b")
+            self.assertIn(f"proofrail {command}", self.readme + self.quickstart)
+        self.assertIn("python3 -m proofrail_verifier", self.readme + self.quickstart)
+        self.assertIn("PYTHONPATH=src", self.readme + self.quickstart)
+        documentation = self.readme + self.quickstart
+        self.assertNotRegex(documentation, r"\b(brew install|npm install|docker pull)\b")
+        pip_install_lines = [
+            line.strip()
+            for line in documentation.splitlines()
+            if "pip install" in line
+        ]
+        self.assertTrue(pip_install_lines)
+        for line in pip_install_lines:
+            self.assertRegex(
+                line,
+                r"^python3 -m pip install --no-index --no-deps dist/proofrail_verifier-[^ ]+\.whl$",
+            )
 
     def test_maturity_and_pilot_boundaries_are_explicit(self) -> None:
         prohibited = ("production-ready", "enterprise-ready", "guarantees correctness", "universal verifier")
         for value in prohibited:
             self.assertNotIn(value, self.readme.lower())
+        self.assertIn(
+            "Local Internal Alpha wheel and source-distribution artifacts can be built offline.",
+            self.status,
+        )
         for limitation in (
-            "No package distribution.",
+            "No public package-index distribution; local Internal Alpha artifacts only.",
+            "No stable compatibility policy.",
             "No hosted service.",
             "No authentication of authorship or timestamps.",
             "No proof of deployment, browser rendering, external systems, or human intent.",
         ):
             self.assertIn(limitation, self.status)
+        self.assertIn("supported general-availability product", self.status)
         self.assertIn("future evaluation targets, not completed results", self.pilot)
         self.assertIn("At least ten real pull requests are evaluated.", self.pilot)
 

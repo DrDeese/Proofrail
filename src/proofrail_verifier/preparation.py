@@ -22,7 +22,7 @@ from .git_source import (
     resolve_repository,
     validate_range,
 )
-from .loading import FixtureLoadError, load_case_directory
+from .loading import FixtureLoadError, load_case_directory, resolve_case_schema
 from .preparation_errors import (
     InvalidPreparationInput,
     OutputWriteFailure,
@@ -294,9 +294,10 @@ def prepare_case(
     validate_range(repository, base_sha, head_sha)
     changes = changed_paths(repository, base_sha, head_sha)
 
-    schema_path = Path(__file__).resolve().parents[2] / "schemas" / "case.schema.json"
-    if not schema_path.is_file():
-        raise PreparationFailure("repository case schema is unavailable")
+    try:
+        schema_path = resolve_case_schema()
+    except FixtureLoadError as error:
+        raise PreparationFailure("repository case schema is unavailable") from error
 
     if output_dir.is_symlink():
         raise OutputWriteFailure("output directory must not be a symbolic link")
