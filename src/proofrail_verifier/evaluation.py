@@ -294,7 +294,7 @@ def evaluate_case(bundle: FixtureBundle) -> dict[str, Any]:
                 "sha256": bundle.case_sha256,
             },
             "schema": {
-                "path": bundle.schema_path.relative_to(bundle.repository_root).as_posix(),
+                "path": bundle.schema_reference,
                 "sha256": bundle.schema_sha256,
             },
         },

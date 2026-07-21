@@ -1,10 +1,27 @@
 # Proofrail quick start
 
-This guide runs the repository’s current offline interfaces from a clean checkout. Proofrail is source-run in this repository; there is no package-installation step.
+This guide runs Proofrail’s offline interfaces from either a local wheel or a
+source checkout. Proofrail is not published to a package index.
 
-## Set up the module path
+## Install a local wheel
 
-The repository workflow uses Python 3.11. From the repository root:
+Build with the deterministic release helper, which invokes the repository's
+existing local PEP 517 backend in a disposable copy and normalizes the final
+source distribution. Then install only the local wheel into a clean virtual
+environment. This does not fetch or install dependencies.
+
+```sh
+python3 scripts/build_release_artifacts.py --repository . --output-dir dist
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install --no-index --no-deps dist/proofrail_verifier-0.1.0a1-py3-none-any.whl
+```
+
+The remaining commands use `proofrail` and require no `PYTHONPATH` setting.
+
+## Source-checkout development
+
+For development directly from the checkout, use the module entry point:
 
 ```sh
 export PYTHONPATH=src
@@ -13,8 +30,8 @@ export PYTHONPATH=src
 ## Run the preserved fixtures
 
 ```sh
-python3 -m proofrail_verifier verify tests/fixtures/001-partial-workflow-fix
-python3 -m proofrail_verifier verify tests/fixtures/002-incapable-validation-command
+proofrail verify tests/fixtures/001-partial-workflow-fix
+proofrail verify tests/fixtures/002-incapable-validation-command
 ```
 
 Each command emits deterministic JSON. A completed `partially_verified`, `unsupported`, `contradicted`, or `human_review_required` verdict is a result, not a verifier failure.
@@ -27,25 +44,25 @@ The repository includes a small committed source repository for the partial-work
 export PROOFRAIL_SOURCE_REPO=tests/source_repositories/partial-workflow-fix
 export PROOFRAIL_OUTPUT_DIR="$(mktemp -d)"
 
-python3 -m proofrail_verifier draft-claims \
+proofrail draft-claims \
   --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
   --output "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md" --case-title "Partial workflow fix"
 
-python3 -m proofrail_verifier check-claims \
+proofrail check-claims \
   --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
   --claim-file "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md"
 
-python3 -m proofrail_verifier prepare-case \
+proofrail prepare-case \
   --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
   --claim-file "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md" \
   --output-dir "$PROOFRAIL_OUTPUT_DIR/proofrail-case"
 
-python3 -m proofrail_verifier verify-change \
+proofrail verify-change \
   --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
   --claim-file "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md" \
   --output "$PROOFRAIL_OUTPUT_DIR/proofrail-verification.json"
 
-python3 -m proofrail_verifier enforce \
+proofrail enforce \
   --result "$PROOFRAIL_OUTPUT_DIR/proofrail-verification.json" --policy .proofrail/policy.yml
 ```
 
@@ -70,8 +87,8 @@ The action writes a JSON result, appends Markdown to the job summary, and expose
 The following is a template. Replace every `<placeholder>` with an exact local value and provide a strict claim file:
 
 ```sh
-python3 -m proofrail_verifier verify-change \
+proofrail verify-change \
   --repo <repo> --base <base-sha> --head <head-sha> --claim-file <claim-file>
 ```
 
-Proofrail does not authenticate external provenance or prove runtime behavior from a path diff. Review [PROJECT_STATUS.md](PROJECT_STATUS.md) before evaluating it outside a controlled pilot.
+Proofrail does not authenticate external provenance or prove runtime behavior from a path diff. Review [PROJECT_STATUS.md](PROJECT_STATUS.md) before evaluating it outside a controlled pilot. For source-run development, replace `proofrail` with `python3 -m proofrail_verifier` after setting `PYTHONPATH=src`.

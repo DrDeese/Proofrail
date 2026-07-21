@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,25 @@ class FixtureLoadError(ValueError):
     """Raised when fixture inputs are missing or structurally unusable."""
 
 
+def _source_case_schema() -> Path:
+    return Path(__file__).resolve().parents[2] / "schemas" / "case.schema.json"
+
+
+def resolve_case_schema() -> Path:
+    """Locate the canonical schema from a checkout or installed package data."""
+    source_schema = _source_case_schema()
+    if source_schema.is_file():
+        return source_schema
+    data_path = sysconfig.get_path("data")
+    if data_path is not None:
+        packaged_schema = Path(data_path) / "proofrail_verifier" / "case.schema.json"
+        if packaged_schema.is_file():
+            return packaged_schema
+    raise FixtureLoadError(
+        "cannot locate canonical case schema in the source checkout or installed package data"
+    )
+
+
 @dataclass(frozen=True)
 class FixtureBundle:
     case: dict[str, Any]
@@ -22,6 +42,7 @@ class FixtureBundle:
     fixture_dir: Path
     case_path: Path
     schema_path: Path
+    schema_reference: str
     case_sha256: str
     schema_sha256: str
 
@@ -64,7 +85,10 @@ def _validate_case_structure(case: dict[str, Any]) -> None:
 
 
 def _load_bundle(
-    root: Path, fixture_dir: Path, schema_path: Path | None = None
+    root: Path,
+    fixture_dir: Path,
+    schema_path: Path | None = None,
+    schema_reference: str | None = None,
 ) -> FixtureBundle:
     case_path = fixture_dir / "case.json"
     schema_path = schema_path or root / "schemas" / "case.schema.json"
@@ -85,12 +109,15 @@ def _load_bundle(
     if schema_path.parent.name == "schemas" and case["id"] != fixture_dir.name:
         raise FixtureLoadError("fixture directory and case id differ")
 
+    if schema_reference is None:
+        schema_reference = schema_path.relative_to(root).as_posix()
     return FixtureBundle(
         case=case,
         repository_root=root,
         fixture_dir=fixture_dir,
         case_path=case_path,
         schema_path=schema_path,
+        schema_reference=schema_reference,
         case_sha256=case_sha256,
         schema_sha256=schema_sha256,
     )
@@ -116,9 +143,16 @@ def load_case_directory(case_directory: Path) -> FixtureBundle:
         ),
         None,
     )
-    if root is None:
+    if root is not None:
+        return _load_bundle(root, fixture_dir)
+    if _source_case_schema().is_file():
         raise FixtureLoadError("cannot locate schemas/case.schema.json above case directory")
-    return _load_bundle(root, fixture_dir)
+    return _load_bundle(
+        fixture_dir,
+        fixture_dir,
+        resolve_case_schema(),
+        "proofrail_verifier/case.schema.json",
+    )
 
 
 def load_fixture_001(repository_root: Path) -> FixtureBundle:

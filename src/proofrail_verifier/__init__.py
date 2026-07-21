@@ -1,5 +1,7 @@
 """Deterministic offline verification for supported Proofrail fixtures."""
 
+__version__ = "0.1.0a1"
+
 from .change_verification import verify_change
 from .claim_drafting import DraftClaimsResult, draft_claims
 from .claim_checking import (
@@ -15,6 +17,7 @@ from .policy_rendering import render_policy_json, render_policy_markdown
 from .rendering import render_json, render_markdown
 
 __all__ = [
+    "__version__",
     "DraftClaimsResult",
     "draft_claims",
     "check_claims",

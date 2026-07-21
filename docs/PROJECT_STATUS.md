@@ -17,11 +17,12 @@ Proofrail is suitable for controlled internal repositories, technically capable 
 - Read-only workflow permissions.
 - Deterministic preflight.
 - Structured scope escalation.
+- Local Internal Alpha wheel and source-distribution artifacts can be built offline.
 
 ## Current limitations
 
-- No package distribution.
-- No formal release or compatibility policy.
+- No public package-index distribution; local Internal Alpha artifacts only.
+- No stable compatibility policy. Compatibility is not guaranteed across alpha releases.
 - No hosted service.
 - Limited external-repository evidence.
 - Fork-PR behavior has not been independently exercised.
