@@ -10,46 +10,11 @@ deterministic evidence.
 
 ## Add the acceptance boundary to `CLAUDE.md`
 
-Copy this block into the repository's `CLAUDE.md` or equivalent repository
-instructions:
+Use the standalone [Claude Code instructions](claude-code-instructions.md), or
+append them directly to an existing `CLAUDE.md`:
 
-```markdown
-## Proofrail acceptance boundary
-
-After implementing any change, and before reporting the task as done or asking
-for merge or acceptance, run Proofrail against the exact committed Git range
-that contains all intended delivery changes.
-
-If the intended delivery is uncommitted, do not silently create a commit and do
-not run Proofrail against `HEAD`, staged files, or unstaged files as though they
-were delivered. Report exactly:
-
-Proofrail acceptance: blocked — the intended delivery is uncommitted, so no exact committed Git range exists for verification.
-
-Ask the user whether to authorize a commit. Never commit automatically.
-
-Convert the completion report into atomic path-level claims, then run
-`draft-claims`, inspect and refine the claim file, run `check-claims`, and run
-`verify-change` for the same full base and head SHAs. Keep outputs outside the
-repository being inspected.
-
-Handle every claim status as follows:
-
-- `verified`: report only that specific claim as supported and retain its
-  evidence reference.
-- `unsupported`: do not report the claim as completed; gather capable evidence,
-  narrow the claim, or disclose that it remains unsupported.
-- `contradicted`: return to implementation or withdraw the claim, then rerun
-  Proofrail before reporting completion.
-- `human_review_required`: stop automated acceptance for that claim and identify
-  the exact unresolved judgment or unavailable evidence.
-
-Do not treat a completion summary, another model's opinion, command success
-alone, or general green CI as proof of a specific claim unless the evidence can
-observe that claim. In the final response, separate the exact Git range, what
-changed, what Proofrail verified, unsupported or contradicted claims, human
-review, and the result artifact. Path-level verification does not automatically
-prove runtime behavior.
+```sh
+cat docs/claude-code-instructions.md >> CLAUDE.md
 ```
 
 ## Run the workflow
