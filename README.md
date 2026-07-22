@@ -1,98 +1,49 @@
 # Proofrail
 
-## Acceptance verification for AI-generated code changes.
+**Check whether an AI coding agent's delivered commit supports what it claims it completed.**
 
-**Internal Alpha**
-
-Proofrail checks whether an AI coding agent actually completed what it claims.
+> Public alpha: local and read-only. Proofrail is not on PyPI and is not yet a hosted service.
 
 ## What Proofrail is
 
-Proofrail is an offline, deterministic acceptance-verification layer for AI-generated Git changes. It compares a structured completion claim with an exact committed range and the evidence available in a supported case. Its result is machine-readable JSON or Markdown, with the paths and evidence references that led to it.
+In short: Acceptance verification for AI-generated code changes.
 
-## Why it exists
+AI agents can pass tests and report "done" even when part of the requested change never reached the final commit. Proofrail compares the agent's claims with an exact Git commit range and the available evidence, then reports each claim as verified, contradicted, unsupported, or requiring human review (`human_review_required`).
 
-An agent can run commands, pass tests, and report “done” while only partially completing the requested change. A successful command proves that the command executed; it does not automatically prove that the delivered commit contains the intended change or that the claimed outcome occurred.
+## Why not just read the diff or ask another AI?
 
-Proofrail keeps these statuses distinct:
+A diff shows what changed, but it does not tell you whether every completion claim is present or whether a passing check actually tested the claimed behavior.
 
-- `verified` — the available capable evidence supports the atomic claim.
-- `unsupported` — the supplied evidence cannot observe the claimed outcome.
-- `contradicted` — the delivered artifact conflicts with the claim.
-- `human_review_required` — capable authenticated evidence is unavailable.
+A second AI can offer another interpretation. Proofrail instead applies deterministic checks to fixed artifacts: the claims, committed range, and submitted evidence. Its report shows which artifact supports each result and what remains unproven.
 
-## The partial-workflow-fix example
+Proofrail complements code review and tests; it does not replace them.
 
-The founder incident asked an AI agent to delete an obsolete `bun.lockb` and update both workflow path triggers to watch `bun.lock`. The actual commit deleted the obsolete lockfile but left the workflow unchanged. The old workflow still ran on the deletion, so a green run was incorrectly treated as evidence that the new trigger worked.
+## The failure that motivated Proofrail
 
-| Claim | Proofrail status |
+An agent was asked to delete an obsolete `bun.lockb` file and update two workflow triggers to watch `bun.lock`.
+
+The delivered commit deleted the obsolete file but omitted both workflow changes. CI still turned green because the old workflow was triggered by the deleted `bun.lockb`. The green check appeared to confirm the fix while actually exercising the configuration that should have been replaced.
+
+| Claim | Proofrail result |
 | --- | --- |
 | Obsolete lockfile deletion | `verified` |
 | Workflow trigger update | `contradicted` |
 | Green run proves the new trigger | `unsupported` |
-| Overall verdict | `partially_verified` |
+| Overall result | `partially_verified` |
 
-Read the complete, factual walkthrough in [the partial-workflow-fix example](docs/examples/partial-workflow-fix.md).
+This fixture is a deterministic reconstruction of the real incident. It does not represent a failure caught from a live external user. Read the [complete reconstructed example](docs/examples/partial-workflow-fix.md).
 
-## How it fits into an AI coding workflow
+## Five-minute quick start: try it from a fresh clone
 
-1. An agent makes a bounded Git change and supplies path-level completion claims.
-2. Proofrail checks that every changed path has exactly one current claim.
-3. Proofrail inspects the exact committed range and evaluates each supported artifact-level claim.
-4. A team may apply a separate acceptance policy to the completed result.
-
-Proofrail does not replace code review or tests. It makes clear what those artifacts actually establish.
-
-## Five-minute quick start
-
-Install a locally built wheel into a clean virtual environment, then invoke the
-`proofrail` command without `PYTHONPATH`. Proofrail is not published to a
-package index.
+Requires Python 3.9 or newer. No installation or network access is needed:
 
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
-python3 -m pip install --no-index --no-deps dist/proofrail_verifier-0.1.0a1-py3-none-any.whl
-
-# Run both deterministic fixtures.
-proofrail verify tests/fixtures/001-partial-workflow-fix
-proofrail verify tests/fixtures/002-incapable-validation-command
+PYTHONPATH=src python3 -m proofrail_verifier verify tests/fixtures/001-partial-workflow-fix
 ```
 
-For source-checkout development, set `PYTHONPATH=src` and use
-`python3 -m proofrail_verifier` with the same commands.
+The expected overall verdict is `partially_verified`. That means Proofrail ran successfully and found that the available artifacts and evidence support only part of the agent's claims.
 
-For an exact local Git range, use the included source repository. These commands create a real temporary output directory and can be run from the repository root:
-
-```sh
-export PROOFRAIL_SOURCE_REPO=tests/source_repositories/partial-workflow-fix
-export PROOFRAIL_OUTPUT_DIR="$(mktemp -d)"
-
-proofrail draft-claims \
-  --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
-  --output "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md" --case-title "Partial workflow fix"
-
-proofrail check-claims \
-  --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
-  --claim-file "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md"
-
-proofrail verify-change \
-  --repo "$PROOFRAIL_SOURCE_REPO" --base HEAD^ --head HEAD \
-  --claim-file "$PROOFRAIL_OUTPUT_DIR/proofrail-claims.md" \
-  --output "$PROOFRAIL_OUTPUT_DIR/proofrail-verification.json"
-
-proofrail enforce \
-  --result "$PROOFRAIL_OUTPUT_DIR/proofrail-verification.json" --policy .proofrail/policy.yml
-```
-
-For a template against your own repository, replace the explicitly marked placeholders `<repo>`, `<base-sha>`, `<head-sha>`, and `<claim-file>`:
-
-```sh
-proofrail verify-change \
-  --repo <repo> --base <base-sha> --head <head-sha> --claim-file <claim-file>
-```
-
-The [quick-start guide](docs/QUICKSTART.md) explains the commands, outputs, and safe boundaries in more detail.
+For local wheel installation and a real Git-range walkthrough, continue to the [quick-start guide](docs/QUICKSTART.md).
 
 ## Example output
 
@@ -141,11 +92,11 @@ Proofrail does not authenticate authorship or timestamps, prove deployment state
 
 ## Project status
 
-Proofrail is **Internal Alpha**. Local build artifacts can be installed for
-controlled internal repositories, technically capable design partners, and
-read-only CI evaluation. It is not published to a package index, a turnkey
-hosted platform, a universal behavioral verifier, or a supported
-general-availability product. See [project status](docs/PROJECT_STATUS.md).
+Proofrail is a **Public alpha** for local, read-only evaluation. The linked
+release materials still use the earlier **Internal Alpha** packaging label. It
+is not on PyPI, a hosted platform, a universal behavioral verifier, or a
+supported general-availability product. See [project status](docs/PROJECT_STATUS.md)
+for the current capabilities and limitations.
 
 ## Pilot guidance
 
