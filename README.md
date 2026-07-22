@@ -45,6 +45,12 @@ The expected overall verdict is `partially_verified`. That means Proofrail ran s
 
 For local wheel installation and a real Git-range walkthrough, continue to the [quick-start guide](docs/QUICKSTART.md).
 
+## For AI coding agents
+
+Run Proofrail after implementation and before the agent reports "done." A diff shows what changed. Proofrail checks whether the agent's stated claims are supported by what changed.
+
+Use the [Proofrail acceptance skill](.codex/skills/proofrail-acceptance/SKILL.md) to inspect an exact committed range, handle each claim status, and produce an evidence-bounded final report.
+
 ## Example output
 
 ```json

@@ -34,6 +34,7 @@ class PublicDocumentationTests(unittest.TestCase):
 
     def test_readme_links_to_public_guides(self) -> None:
         for relative in (
+            ".codex/skills/proofrail-acceptance/SKILL.md",
             "docs/QUICKSTART.md",
             "docs/PROJECT_STATUS.md",
             "docs/PILOT_GUIDE.md",
@@ -41,6 +42,51 @@ class PublicDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(relative, self.readme)
             self.assertTrue((REPOSITORY_ROOT / relative).is_file(), relative)
+
+    def test_public_acceptance_skill_is_operational_and_bounded(self) -> None:
+        skill = (
+            REPOSITORY_ROOT / ".codex" / "skills" / "proofrail-acceptance" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("after implementing a bounded change", skill)
+        self.assertIn("before reporting the task as complete", skill)
+        self.assertIn('PROOFRAIL_CMD="proofrail"', skill)
+        self.assertIn('PROOFRAIL_CMD="python3 -m proofrail_verifier"', skill)
+        self.assertIn('export PYTHONPATH="/absolute/path/to/Proofrail/src"', skill)
+        self.assertIn(
+            "`PYTHONPATH` identifies the `src` directory in the Proofrail source checkout",
+            skill,
+        )
+        self.assertIn(
+            "`--repo` argument identifies the separate software repository",
+            skill,
+        )
+        for command in ("draft-claims", "check-claims", "verify-change"):
+            self.assertIn(f"$PROOFRAIL_CMD {command}", skill)
+        for status in (
+            "`verified`",
+            "`unsupported`",
+            "`contradicted`",
+            "`human_review_required`",
+        ):
+            self.assertIn(status, skill)
+        for category in (
+            "What changed",
+            "What Proofrail verified",
+            "What remains unsupported or contradicted",
+            "What requires human review",
+            "Exact Git range inspected",
+        ):
+            self.assertIn(category, skill)
+        for prohibited in ("automatically commit", "push", "merge", "publish", "deploy"):
+            self.assertIn(prohibited, skill)
+        self.assertIn(
+            "Do not place unsupported or contradicted claims under “What Proofrail verified,”",
+            skill,
+        )
+        self.assertIn(
+            "A diff shows what changed. Proofrail checks whether the agent's stated claims are supported by what changed.",
+            self.readme,
+        )
 
     def test_documented_commands_are_real_and_safe(self) -> None:
         help_text = subprocess.run(
