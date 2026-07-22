@@ -1,13 +1,13 @@
 ---
 name: proofrail-acceptance
-description: Apply Proofrail as a post-implementation acceptance boundary for a bounded, committed software change. Use after implementation and before reporting completion to check path-level claims against an exact Git range and handle unsupported, contradicted, or human-review-required results without overstating the evidence.
+description: Apply Proofrail after implementing any bounded repository change and before reporting completion, whether the intended delivery is committed or uncommitted. Verify against an exact committed Git range when available; otherwise report acceptance blocked and request commit authorization. Never commit automatically or treat staged or unstaged work as Proofrail-verified.
 ---
 
 # Proofrail acceptance
 
 ## Trigger
 
-Invoke this skill after implementing a bounded change and before reporting the task as complete. Use it only when the delivered work is an exact committed Git range. If the intended delivery is uncommitted or the range is ambiguous, stop; this skill does not create commits.
+Invoke this skill after implementing any bounded repository change and before reporting the task as complete. If all intended changes are in an exact committed Git range, run the acceptance workflow. If the intended delivery is uncommitted, do not create a commit or run Proofrail against HEAD, staged files, or unstaged files. Report acceptance as blocked and ask the user whether to authorize a commit.
 
 Do not use this skill in place of implementation, code review, tests, `proofrail-autonomous-step`, `proofrail-step-preflight`, or `proofrail-scope-escalation`.
 
@@ -80,6 +80,7 @@ Never treat the agent's completion summary, another model's opinion, command suc
 
 ## Failure handling
 
+- If the intended delivery is uncommitted, report: `Proofrail acceptance: blocked — the intended delivery is uncommitted, so no exact committed Git range exists for verification.` Ask for commit authorization and stop. Do not describe the implementation as complete or Proofrail-verified.
 - If Proofrail is unavailable, the range is invalid, the worktree contains undelivered implementation work, claim drafting fails, or any command exits nonzero, stop and report the exact command and error. Do not substitute model judgment.
 - If `check-claims` reports missing, stale, or duplicate coverage, repair the claim file or the implementation as appropriate and rerun checking before verification.
 - If the implementation or completion claims change after verification, select the new full head SHA, create new outputs, and rerun drafting, checking, and verification. Never reuse a result for an older range.

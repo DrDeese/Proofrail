@@ -22,6 +22,7 @@ class PublicDocumentationTests(unittest.TestCase):
         self.pilot = (REPOSITORY_ROOT / "docs" / "PILOT_GUIDE.md").read_text(
             encoding="utf-8"
         )
+        self.agents = (REPOSITORY_ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
     def test_readme_has_first_time_visitor_facts(self) -> None:
         self.assertIn("Acceptance verification for AI-generated code changes.", self.readme)
@@ -47,7 +48,7 @@ class PublicDocumentationTests(unittest.TestCase):
         skill = (
             REPOSITORY_ROOT / ".codex" / "skills" / "proofrail-acceptance" / "SKILL.md"
         ).read_text(encoding="utf-8")
-        self.assertIn("after implementing a bounded change", skill)
+        self.assertIn("after implementing any bounded repository change", skill)
         self.assertIn("before reporting the task as complete", skill)
         self.assertIn('PROOFRAIL_CMD="proofrail"', skill)
         self.assertIn('PROOFRAIL_CMD="python3 -m proofrail_verifier"', skill)
@@ -86,6 +87,39 @@ class PublicDocumentationTests(unittest.TestCase):
         self.assertIn(
             "A diff shows what changed. Proofrail checks whether the agent's stated claims are supported by what changed.",
             self.readme,
+        )
+
+    def test_acceptance_boundary_handles_uncommitted_delivery(self) -> None:
+        skill = (
+            REPOSITORY_ROOT / ".codex" / "skills" / "proofrail-acceptance" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        blocked = (
+            "Proofrail acceptance: blocked — the intended delivery is uncommitted, "
+            "so no exact committed Git range exists for verification."
+        )
+        self.assertIn(
+            "All intended delivery changes are contained in an exact committed Git range",
+            self.agents,
+        )
+        self.assertIn(
+            "Acceptance verification is explicitly reported as blocked",
+            self.agents,
+        )
+        self.assertIn(blocked, self.agents)
+        self.assertIn(blocked, skill)
+        description = skill.split("---", 2)[1]
+        self.assertIn("committed or uncommitted", description)
+        self.assertIn("exact committed Git range when available", description)
+        self.assertIn("request commit authorization", description)
+        self.assertIn("Never commit automatically", description)
+        self.assertIn(
+            "staged or unstaged work as Proofrail-verified",
+            description,
+        )
+        self.assertIn("do not create a commit", skill)
+        self.assertIn(
+            "do not create one and do not run Proofrail against `HEAD`, staged files, or unstaged files",
+            self.agents,
         )
 
     def test_documented_commands_are_real_and_safe(self) -> None:

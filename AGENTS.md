@@ -14,6 +14,19 @@ Do not redefine the product without explicit human approval.
 
 A task is not complete merely because a command passed.
 
+### Proofrail acceptance boundary
+
+For every task that changes repository files, do not report the task as complete until one of these conditions is recorded:
+
+1. All intended delivery changes are contained in an exact committed Git range and `proofrail-acceptance` has been invoked on that range.
+2. Acceptance verification is explicitly reported as blocked because the intended delivery is uncommitted.
+
+If the user has not authorized a commit, do not create one and do not run Proofrail against `HEAD`, staged files, or unstaged files. Report exactly:
+
+> Proofrail acceptance: blocked — the intended delivery is uncommitted, so no exact committed Git range exists for verification.
+
+Ask the user whether to authorize a commit. You may report the files changed and commands executed, but do not describe the task or its claims as complete or Proofrail-verified.
+
 Before reporting completion:
 
 1. Restate the claims you are making.
