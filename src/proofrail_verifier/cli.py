@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Sequence
 
+from . import __version__
 from .artifacts import ArtifactInspectionError
 from .change_verification import verify_change
 from .claim_drafting import (
@@ -46,6 +47,7 @@ from .rendering import render_json, render_markdown
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="proofrail_verifier")
+    parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
     verify = commands.add_parser("verify", help="verify a supported local case directory")
     verify.add_argument("case_directory", type=Path)

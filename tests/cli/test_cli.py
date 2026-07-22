@@ -10,12 +10,30 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from proofrail_verifier import __version__
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPOSITORY_ROOT / "tests" / "fixtures"
 
 
 class ProofrailCliTests(unittest.TestCase):
+    def test_version_prints_package_version_and_exits_successfully(self) -> None:
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(REPOSITORY_ROOT / "src")
+        completed = subprocess.run(
+            [sys.executable, "-m", "proofrail_verifier", "--version"],
+            cwd=REPOSITORY_ROOT,
+            env=environment,
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, f"{__version__}\n")
+        self.assertEqual(completed.stderr, "")
+
     def _run(self, case_directory: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(REPOSITORY_ROOT / "src")
