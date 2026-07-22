@@ -16,6 +16,9 @@ class PublicDocumentationTests(unittest.TestCase):
         self.quickstart = (REPOSITORY_ROOT / "docs" / "QUICKSTART.md").read_text(
             encoding="utf-8"
         )
+        self.claude_code = (
+            REPOSITORY_ROOT / "docs" / "CLAUDE_CODE.md"
+        ).read_text(encoding="utf-8")
         self.status = (REPOSITORY_ROOT / "docs" / "PROJECT_STATUS.md").read_text(
             encoding="utf-8"
         )
@@ -36,6 +39,7 @@ class PublicDocumentationTests(unittest.TestCase):
     def test_readme_links_to_public_guides(self) -> None:
         for relative in (
             ".codex/skills/proofrail-acceptance/SKILL.md",
+            "docs/CLAUDE_CODE.md",
             "docs/QUICKSTART.md",
             "docs/PROJECT_STATUS.md",
             "docs/PILOT_GUIDE.md",
@@ -43,6 +47,58 @@ class PublicDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(relative, self.readme)
             self.assertTrue((REPOSITORY_ROOT / relative).is_file(), relative)
+
+    def test_claude_code_integration_is_operational_and_bounded(self) -> None:
+        blocked = (
+            "Proofrail acceptance: blocked — the intended delivery is uncommitted, "
+            "so no exact committed Git range exists for verification."
+        )
+        for timing in (
+            "after implementation",
+            'before Claude reports "done,"',
+            "before a change is\nmerged or otherwise accepted",
+        ):
+            self.assertIn(timing, self.claude_code)
+        self.assertIn(blocked, self.claude_code)
+        self.assertIn("Never commit automatically", self.claude_code)
+        normalized_claude_code = " ".join(self.claude_code.split())
+        self.assertIn(
+            "do not run Proofrail against `HEAD`, staged files, or unstaged files",
+            normalized_claude_code,
+        )
+        for command in ("draft-claims", "check-claims", "verify-change"):
+            self.assertIn(f"$PROOFRAIL_CMD {command}", self.claude_code)
+        for status in (
+            "`verified`",
+            "`unsupported`",
+            "`contradicted`",
+            "`human_review_required`",
+        ):
+            self.assertIn(status, self.claude_code)
+        for section in (
+            "Exact Git range inspected",
+            "What changed",
+            "What Proofrail verified",
+            "What remains unsupported or contradicted",
+            "What requires human review",
+            "result artifact",
+        ):
+            self.assertIn(section, self.claude_code)
+        for limitation in (
+            "public alpha",
+            "not on PyPI",
+            "not a hosted service",
+            "Path-level verification does not automatically prove\nruntime behavior",
+        ):
+            self.assertIn(limitation, self.claude_code)
+        self.assertIn(
+            "A diff shows what changed. Proofrail checks whether the agent's stated claims are\nsupported by what changed.",
+            self.claude_code,
+        )
+        self.assertIn(
+            "Asking another model for its opinion is not\ndeterministic evidence.",
+            self.claude_code,
+        )
 
     def test_public_acceptance_skill_is_operational_and_bounded(self) -> None:
         skill = (
@@ -180,7 +236,7 @@ class PublicDocumentationTests(unittest.TestCase):
     def test_user_sections_precede_development_and_paths_are_portable(self) -> None:
         self.assertLess(self.readme.index("## What Proofrail is"), self.readme.index("## Development and contributing"))
         self.assertLess(self.readme.index("## Five-minute quick start"), self.readme.index("## Development and contributing"))
-        for path in (REPOSITORY_ROOT / "README.md", REPOSITORY_ROOT / "docs" / "QUICKSTART.md", REPOSITORY_ROOT / "docs" / "PROJECT_STATUS.md", REPOSITORY_ROOT / "docs" / "PILOT_GUIDE.md", REPOSITORY_ROOT / "docs" / "examples" / "partial-workflow-fix.md"):
+        for path in (REPOSITORY_ROOT / "README.md", REPOSITORY_ROOT / "docs" / "CLAUDE_CODE.md", REPOSITORY_ROOT / "docs" / "QUICKSTART.md", REPOSITORY_ROOT / "docs" / "PROJECT_STATUS.md", REPOSITORY_ROOT / "docs" / "PILOT_GUIDE.md", REPOSITORY_ROOT / "docs" / "examples" / "partial-workflow-fix.md"):
             self.assertNotRegex(path.read_text(encoding="utf-8"), r"/(Users|home|private)/")
 
     def test_fixture_commands_execute(self) -> None:

@@ -51,6 +51,8 @@ Run Proofrail after implementation and before the agent reports "done." A diff s
 
 Use the [Proofrail acceptance skill](.codex/skills/proofrail-acceptance/SKILL.md) to inspect an exact committed range, handle each claim status, and produce an evidence-bounded final report.
 
+Claude Code users can copy the repository instructions in the [Claude Code integration guide](docs/CLAUDE_CODE.md).
+
 ## Example output
 
 ```json
