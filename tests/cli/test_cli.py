@@ -18,11 +18,17 @@ FIXTURES = REPOSITORY_ROOT / "tests" / "fixtures"
 
 
 class ProofrailCliTests(unittest.TestCase):
-    def test_version_prints_package_version_and_exits_successfully(self) -> None:
+    def _run_command(
+        self,
+        *arguments: str,
+        environment_overrides: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(REPOSITORY_ROOT / "src")
-        completed = subprocess.run(
-            [sys.executable, "-m", "proofrail_verifier", "--version"],
+        if environment_overrides is not None:
+            environment.update(environment_overrides)
+        return subprocess.run(
+            [sys.executable, "-m", "proofrail_verifier", *arguments],
             cwd=REPOSITORY_ROOT,
             env=environment,
             text=True,
@@ -30,28 +36,18 @@ class ProofrailCliTests(unittest.TestCase):
             timeout=10,
             check=False,
         )
+
+    def test_version_prints_package_version_and_exits_successfully(self) -> None:
+        completed = self._run_command("--version")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout, f"{__version__}\n")
         self.assertEqual(completed.stderr, "")
 
     def _run(self, case_directory: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-        environment = os.environ.copy()
-        environment["PYTHONPATH"] = str(REPOSITORY_ROOT / "src")
-        return subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "proofrail_verifier",
-                "verify",
-                str(case_directory),
-                *arguments,
-            ],
-            cwd=REPOSITORY_ROOT,
-            env=environment,
-            text=True,
-            capture_output=True,
-            timeout=10,
-            check=False,
+        return self._run_command(
+            "verify",
+            str(case_directory),
+            *arguments,
         )
 
     @staticmethod
@@ -96,6 +92,41 @@ class ProofrailCliTests(unittest.TestCase):
         )
         self.assertEqual(json.loads(completed.stdout)["overall_verdict"], "partially_verified")
         self.assertNotIn(str(REPOSITORY_ROOT), completed.stdout)
+
+    def test_demo_uses_packaged_fixture_and_cleans_temporary_directory(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="proofrail-cli-demo-parent-") as temporary:
+            temp_root = Path(temporary)
+            completed = self._run_command(
+                "verify",
+                "--demo",
+                environment_overrides={"TMPDIR": str(temp_root)},
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            self.assertEqual(
+                json.loads(completed.stdout)["overall_verdict"],
+                "partially_verified",
+            )
+            self.assertEqual(list(temp_root.iterdir()), [])
+
+    def test_verify_requires_exactly_one_case_source(self) -> None:
+        missing = self._run_command("verify")
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn(
+            "verify requires exactly one of case_directory or --demo",
+            missing.stderr,
+        )
+
+        both = self._run_command(
+            "verify",
+            str(FIXTURES / "001-partial-workflow-fix"),
+            "--demo",
+        )
+        self.assertEqual(both.returncode, 2)
+        self.assertIn(
+            "verify requires exactly one of case_directory or --demo",
+            both.stderr,
+        )
 
     def test_overall_contradicted_verdict_still_exits_zero(self) -> None:
         with tempfile.TemporaryDirectory(prefix="proofrail-cli-contradicted-") as temporary:

@@ -23,6 +23,13 @@ ReleaseBuildError = BUILD_MODULE["ReleaseBuildError"]
 normalize_sdist = BUILD_MODULE["normalize_sdist"]
 NORMALIZED_MTIME = BUILD_MODULE["NORMALIZED_MTIME"]
 VERSION = "0.1.0a1"
+DEMO_RELATIVE_FILES = (
+    "actual.patch",
+    "case.json",
+    "initial/.github/workflows/ci.yml",
+    "initial/bun.lock",
+    "initial/bun.lockb",
+)
 
 
 class DistributionTests(unittest.TestCase):
@@ -63,8 +70,8 @@ class DistributionTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        wheel = next(output.glob("proofrail_verifier-*.whl"), None)
-        sdist = next(output.glob("proofrail-verifier-*.tar.gz"), None)
+        wheel = next(output.glob("proofrail-*.whl"), None)
+        sdist = next(output.glob("proofrail-*.tar.gz"), None)
         self.assertIsNotNone(wheel)
         self.assertIsNotNone(sdist)
         self.assertEqual(sorted(path.name for path in output.iterdir()), sorted([wheel.name, sdist.name]))
@@ -134,9 +141,10 @@ class DistributionTests(unittest.TestCase):
 
             with tarfile.open(first_sdist) as source:
                 names = set(source.getnames())
-            prefix = f"proofrail-verifier-{VERSION}/"
+            prefix = f"proofrail-{VERSION}/"
             required_sdist = {
                 f"{prefix}CHANGELOG.md",
+                f"{prefix}LICENSE",
                 f"{prefix}README.md",
                 f"{prefix}docs/PROJECT_STATUS.md",
                 f"{prefix}docs/QUICKSTART.md",
@@ -146,17 +154,56 @@ class DistributionTests(unittest.TestCase):
                 f"{prefix}src/proofrail_verifier/loading.py",
                 f"{prefix}src/proofrail_verifier/preparation.py",
             }
+            required_sdist.update(
+                f"{prefix}src/proofrail_verifier/demo/001-partial-workflow-fix/{relative}"
+                for relative in DEMO_RELATIVE_FILES
+            )
             self.assertTrue(required_sdist.issubset(names))
             self.assertFalse(any("tests/" in name or "fixtures/" in name for name in names))
 
             with zipfile.ZipFile(first_wheel) as source:
                 wheel_names = set(source.namelist())
+                metadata = source.read(
+                    f"proofrail-{VERSION}.dist-info/METADATA"
+                ).decode("utf-8")
             self.assertIn("proofrail_verifier/cli.py", wheel_names)
             self.assertIn(
-                f"proofrail_verifier-{VERSION}.data/data/proofrail_verifier/case.schema.json",
+                f"proofrail-{VERSION}.data/data/proofrail_verifier/case.schema.json",
                 wheel_names,
             )
+            self.assertIn(f"proofrail-{VERSION}.dist-info/LICENSE", wheel_names)
+            for relative in DEMO_RELATIVE_FILES:
+                self.assertIn(
+                    f"proofrail_verifier/demo/001-partial-workflow-fix/{relative}",
+                    wheel_names,
+                )
             self.assertFalse(any(name.startswith("tests/") for name in wheel_names))
+            for expected_metadata in (
+                "Name: proofrail",
+                f"Version: {VERSION}",
+                "Home-page: https://github.com/DrDeese/Proofrail",
+                "License: Apache-2.0",
+                "Project-URL: Source, https://github.com/DrDeese/Proofrail",
+                "Project-URL: Issues, https://github.com/DrDeese/Proofrail/issues",
+                "Project-URL: Documentation, https://github.com/DrDeese/Proofrail#readme",
+            ):
+                self.assertIn(expected_metadata, metadata)
+
+    def test_packaged_demo_resources_match_fixture_byte_for_byte(self) -> None:
+        fixture = REPOSITORY_ROOT / "tests" / "fixtures" / "001-partial-workflow-fix"
+        packaged = (
+            REPOSITORY_ROOT
+            / "src"
+            / "proofrail_verifier"
+            / "demo"
+            / "001-partial-workflow-fix"
+        )
+        for relative in DEMO_RELATIVE_FILES:
+            with self.subTest(relative=relative):
+                self.assertEqual(
+                    (packaged / relative).read_bytes(),
+                    (fixture / relative).read_bytes(),
+                )
 
     def test_normalized_sdist_preserves_files_and_has_fixed_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -184,7 +231,7 @@ class DistributionTests(unittest.TestCase):
             extracted.mkdir()
             with tarfile.open(final_sdist, mode="r:gz") as archive:
                 archive.extractall(extracted)
-            source_root = extracted / f"proofrail-verifier-{VERSION}"
+            source_root = extracted / f"proofrail-{VERSION}"
             wheel_output = source_root / "validation-wheel"
             wheel_output.mkdir()
             environment = os.environ.copy()
@@ -261,6 +308,7 @@ class DistributionTests(unittest.TestCase):
             environment.pop("PYTHONPATH", None)
             installations: list[tuple[Path, Path, Path]] = []
             outputs: list[str] = []
+            demo_outputs: list[str] = []
             markdown_outputs: list[str] = []
             schema_hashes: list[str] = []
             for name in ("first-clean-install", "second-clean-install-with-different-path"):
@@ -274,6 +322,26 @@ class DistributionTests(unittest.TestCase):
                     environment=environment,
                 )
                 self.assertEqual(installed.returncode, 0, installed.stderr)
+                version = self._run(
+                    [str(command), "--version"],
+                    cwd=root,
+                    environment=environment,
+                )
+                self.assertEqual(version.returncode, 0, version.stderr)
+                self.assertEqual(version.stdout, f"{VERSION}\n")
+                self.assertEqual(version.stderr, "")
+                demo = self._run(
+                    [str(command), "verify", "--demo"],
+                    cwd=root,
+                    environment=environment,
+                )
+                self.assertEqual(demo.returncode, 0, demo.stderr)
+                self.assertEqual(demo.stderr, "")
+                self.assertEqual(
+                    json.loads(demo.stdout)["overall_verdict"],
+                    "partially_verified",
+                )
+                demo_outputs.append(demo.stdout)
                 schema_query = self._run(
                     [str(interpreter), "-c", "import sysconfig; from pathlib import Path; print(Path(sysconfig.get_path('data')) / 'proofrail_verifier' / 'case.schema.json')"],
                     cwd=root,
@@ -304,6 +372,7 @@ class DistributionTests(unittest.TestCase):
                 markdown_outputs.append(markdown.stdout)
 
             self.assertEqual(outputs[0], outputs[1])
+            self.assertEqual(demo_outputs[0], demo_outputs[1])
             self.assertEqual(markdown_outputs[0], markdown_outputs[1])
             self.assertEqual(schema_hashes[0], schema_hashes[1])
             interpreter, command, packaged_schema = installations[0]
@@ -352,7 +421,7 @@ class DistributionTests(unittest.TestCase):
 
             for interpreter, command, _ in installations:
                 removed = self._run(
-                    [str(interpreter), "-m", "pip", "uninstall", "-y", "proofrail-verifier"],
+                    [str(interpreter), "-m", "pip", "uninstall", "-y", "proofrail"],
                     cwd=root,
                     environment=environment,
                 )

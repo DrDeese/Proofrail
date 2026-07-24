@@ -1,0 +1,6 @@
+diff --git a/bun.lockb b/bun.lockb
+deleted file mode 100644
+--- a/bun.lockb
++++ /dev/null
+@@ -1 +0,0 @@
+-obsolete lockfile fixture

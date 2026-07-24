@@ -1,0 +1,206 @@
+{
+  "id": "001-partial-workflow-fix",
+  "title": "Partial workflow lockfile trigger fix",
+  "source": "docs/founder-evidence/001-partial-workflow-fix.md",
+  "requested_change": {
+    "summary": "Remove the obsolete lockfile and update both workflow path filters to watch the active lockfile.",
+    "required_artifact_changes": [
+      {
+        "path": "bun.lockb",
+        "change": "deleted"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "location": "on.push.paths",
+        "change": "replace bun.lockb with bun.lock"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "location": "on.pull_request.paths",
+        "change": "replace bun.lockb with bun.lock"
+      }
+    ]
+  },
+  "agent_completion_claim": "The obsolete bun.lockb file was removed, both workflow trigger blocks were updated to watch bun.lock, and the completed change was merged.",
+  "acceptance_stages": [
+    "attempted",
+    "executed",
+    "artifact_changed",
+    "claim_supported",
+    "outcome_verified"
+  ],
+  "claims": [
+    {
+      "id": "obsolete-lockfile-deleted",
+      "statement": "bun.lockb was deleted.",
+      "acceptance_stage": "claim_supported",
+      "status": "verified",
+      "required_observation": "file_contents",
+      "evaluation": {"predicate": "path_absent", "path": "bun.lockb"},
+      "evidence_ids": ["actual-commit-diff"],
+      "finding_ids": ["deletion-present"],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": ["No authenticated agent transcript is included."]
+      }
+    },
+    {
+      "id": "workflow-triggers-updated",
+      "statement": "Both workflow trigger blocks now watch bun.lock.",
+      "acceptance_stage": "claim_supported",
+      "status": "contradicted",
+      "required_observation": "file_contents",
+      "evaluation": {
+        "predicate": "workflow_paths_equal",
+        "path": ".github/workflows/ci.yml",
+        "expected_values": ["bun.lock"]
+      },
+      "evidence_ids": ["actual-commit-diff"],
+      "finding_ids": ["workflow-change-absent"],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": ["No authenticated agent transcript is included."]
+      }
+    },
+    {
+      "id": "green-run-proves-new-trigger",
+      "statement": "The successful workflow run proves that the bun.lock trigger works.",
+      "acceptance_stage": "outcome_verified",
+      "status": "unsupported",
+      "required_observation": "workflow_trigger_event",
+      "evaluation": {"predicate": "evidence_capability"},
+      "evidence_ids": ["reported-workflow-run"],
+      "finding_ids": ["run-does-not-verify-trigger"],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": ["No authenticated agent transcript is included."]
+      }
+    },
+    {
+      "id": "change-merged",
+      "statement": "The completed change was merged.",
+      "acceptance_stage": "executed",
+      "status": "human_review_required",
+      "required_observation": "merge_record",
+      "evaluation": {"predicate": "authenticated_evidence"},
+      "evidence_ids": [],
+      "finding_ids": ["merge-unverified"],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": ["The offline fixture contains no merge provenance."]
+      }
+    }
+  ],
+  "evidence": [
+    {
+      "id": "actual-commit-diff",
+      "kind": "artifact_derived",
+      "summary": "The reconstructed final commit deletes bun.lockb and does not modify the workflow file.",
+      "acceptance_stage": "artifact_changed",
+      "observation_method": "git_diff",
+      "observes": ["file_contents"],
+      "claim_ids": [
+        "obsolete-lockfile-deleted",
+        "workflow-triggers-updated"
+      ],
+      "provenance": {
+        "source_type": "git_artifact",
+        "authentication": "not_applicable",
+        "independently_verified": true,
+        "limitations": ["The repository is a deterministic reconstruction of the founder incident."]
+      }
+    },
+    {
+      "id": "reported-workflow-run",
+      "kind": "scenario_provided",
+      "summary": "A workflow run reportedly succeeded after bun.lockb was deleted and was interpreted as proof of the bun.lock trigger.",
+      "acceptance_stage": "executed",
+      "observation_method": "external_record",
+      "observes": ["command_exit_status"],
+      "execution_succeeded": true,
+      "claim_ids": ["green-run-proves-new-trigger"],
+      "provenance": {
+        "source_type": "scenario_document",
+        "authentication": "unauthenticated",
+        "independently_verified": false,
+        "limitations": ["No authenticated event, run, SHA, workflow version, or triggering-path provenance is included."]
+      }
+    }
+  ],
+  "findings": [
+    {
+      "id": "deletion-present",
+      "claim_id": "obsolete-lockfile-deleted",
+      "evidence_ids": ["actual-commit-diff"],
+      "acceptance_stage": "claim_supported",
+      "result": "supports",
+      "summary": "The final commit contains the claimed bun.lockb deletion.",
+      "provenance": {
+        "source_type": "deterministic_validation",
+        "authentication": "not_applicable",
+        "independently_verified": true,
+        "limitations": []
+      }
+    },
+    {
+      "id": "workflow-change-absent",
+      "claim_id": "workflow-triggers-updated",
+      "evidence_ids": ["actual-commit-diff"],
+      "acceptance_stage": "claim_supported",
+      "result": "contradicts",
+      "summary": "The workflow is unchanged and still references bun.lockb twice.",
+      "provenance": {
+        "source_type": "deterministic_validation",
+        "authentication": "not_applicable",
+        "independently_verified": true,
+        "limitations": []
+      }
+    },
+    {
+      "id": "run-does-not-verify-trigger",
+      "claim_id": "green-run-proves-new-trigger",
+      "evidence_ids": ["reported-workflow-run"],
+      "acceptance_stage": "outcome_verified",
+      "result": "insufficient",
+      "summary": "Unauthenticated scenario-provided run information cannot verify the bun.lock trigger.",
+      "provenance": {
+        "source_type": "deterministic_validation",
+        "authentication": "not_applicable",
+        "independently_verified": true,
+        "limitations": ["The underlying workflow run is not authenticated."]
+      }
+    },
+    {
+      "id": "merge-unverified",
+      "claim_id": "change-merged",
+      "evidence_ids": [],
+      "acceptance_stage": "executed",
+      "result": "insufficient",
+      "summary": "The offline fixture contains no evidence that the change was merged.",
+      "provenance": {
+        "source_type": "deterministic_validation",
+        "authentication": "not_applicable",
+        "independently_verified": true,
+        "limitations": ["Merge status requires additional provenance."]
+      }
+    }
+  ],
+  "verdict": {
+    "status": "partially_verified",
+    "explanation": "The obsolete lockfile was deleted, but the claimed workflow modification is absent from the final commit. The passing workflow is unauthenticated scenario-provided evidence and does not verify the new bun.lock trigger.",
+    "finding_ids": [
+      "deletion-present",
+      "workflow-change-absent",
+      "run-does-not-verify-trigger",
+      "merge-unverified"
+    ]
+  }
+}

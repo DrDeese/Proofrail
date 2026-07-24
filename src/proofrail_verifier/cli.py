@@ -6,6 +6,8 @@ import argparse
 import os
 import sys
 import tempfile
+from importlib.abc import Traversable
+from importlib import resources
 from pathlib import Path
 from typing import Sequence
 
@@ -25,7 +27,7 @@ from .claim_checking import (
     write_claim_check_output,
 )
 from .evaluation import VerificationError, evaluate_case
-from .loading import FixtureLoadError, load_case_directory
+from .loading import FixtureLoadError, load_case_directory, resolve_case_schema
 from .preparation import (
     InvalidPreparationInput,
     OutputWriteFailure,
@@ -50,7 +52,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
     verify = commands.add_parser("verify", help="verify a supported local case directory")
-    verify.add_argument("case_directory", type=Path)
+    verify.add_argument("case_directory", type=Path, nargs="?")
+    verify.add_argument("--demo", action="store_true")
     verify.add_argument("--format", choices=("json", "markdown"), default="json")
     verify.add_argument("--output", type=Path)
     prepare = commands.add_parser(
@@ -134,9 +137,35 @@ def write_atomic(path: Path, content: str, case_directory: Path) -> None:
                 pass
 
 
-def _verify(arguments: argparse.Namespace) -> int:
+def _copy_resource_tree(source: Traversable, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for child in source.iterdir():
+        target = destination / child.name
+        if child.is_dir():
+            _copy_resource_tree(child, target)
+        elif child.is_file():
+            target.write_bytes(child.read_bytes())
+        else:
+            raise OSError(f"unsupported demo resource: {child.name}")
+
+
+def _materialize_demo_case(destination: Path) -> Path:
+    source = resources.files("proofrail_verifier")
+    for component in ("demo", "001-partial-workflow-fix"):
+        source = source.joinpath(component)
+    if not source.is_dir():
+        raise OSError("packaged demo resources are missing")
+    case_directory = destination / "001-partial-workflow-fix"
+    _copy_resource_tree(source, case_directory)
+    schema = destination / "schemas" / "case.schema.json"
+    schema.parent.mkdir(parents=True)
+    schema.write_bytes(resolve_case_schema().read_bytes())
+    return case_directory
+
+
+def _verify_case(arguments: argparse.Namespace, case_directory: Path) -> int:
     try:
-        bundle = load_case_directory(arguments.case_directory)
+        bundle = load_case_directory(case_directory)
     except FixtureLoadError as error:
         print(f"proofrail: invalid case: {error}", file=sys.stderr)
         return 3
@@ -160,6 +189,18 @@ def _verify(arguments: argparse.Namespace) -> int:
         print(f"proofrail: output write failed: {error}", file=sys.stderr)
         return 5
     return 0
+
+
+def _verify(arguments: argparse.Namespace) -> int:
+    if not arguments.demo:
+        return _verify_case(arguments, arguments.case_directory)
+    try:
+        with tempfile.TemporaryDirectory(prefix="proofrail-demo-") as temporary:
+            case_directory = _materialize_demo_case(Path(temporary))
+            return _verify_case(arguments, case_directory)
+    except (OSError, UnicodeError) as error:
+        print(f"proofrail: invalid demo: {error}", file=sys.stderr)
+        return 3
 
 
 def _prepare(arguments: argparse.Namespace) -> int:
@@ -356,7 +397,12 @@ def _enforce(arguments: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    arguments = _parser().parse_args(argv)
+    parser = _parser()
+    arguments = parser.parse_args(argv)
+    if arguments.command == "verify":
+        source_count = int(arguments.case_directory is not None) + int(arguments.demo)
+        if source_count != 1:
+            parser.error("verify requires exactly one of case_directory or --demo")
     if arguments.command == "prepare-case":
         return _prepare(arguments)
     if arguments.command == "verify-change":
