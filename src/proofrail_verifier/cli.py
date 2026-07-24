@@ -44,7 +44,7 @@ from .policy import (
     write_new_atomic,
 )
 from .policy_rendering import render_policy_json, render_policy_markdown
-from .rendering import render_json, render_text
+from .rendering import render_demo_text, render_json, render_text
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -179,7 +179,12 @@ def _verify_case(arguments: argparse.Namespace, case_directory: Path) -> int:
         print(f"proofrail: invalid case: {error}", file=sys.stderr)
         return 3
 
-    rendered = render_json(result) if arguments.format == "json" else render_text(result)
+    if arguments.format == "json":
+        rendered = render_json(result)
+    elif arguments.demo:
+        rendered = render_demo_text(result)
+    else:
+        rendered = render_text(result)
     try:
         if arguments.output is None:
             sys.stdout.write(rendered)

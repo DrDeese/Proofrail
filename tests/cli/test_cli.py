@@ -185,7 +185,7 @@ class ProofrailCliTests(unittest.TestCase):
         self.assertEqual(completed.stderr, "")
         self.assertEqual(completed.stdout, EXPECTED_DEMO_JSON)
 
-    def test_text_is_default_and_has_ordered_plain_ascii_structure(self) -> None:
+    def test_demo_text_is_default_and_has_ordered_plain_ascii_structure(self) -> None:
         default = self._run_command("verify", "--demo")
         explicit = self._run_command("verify", "--demo", "--format", "text")
         self.assertEqual(default.returncode, 0, default.stderr)
@@ -194,19 +194,51 @@ class ProofrailCliTests(unittest.TestCase):
         self.assertTrue(default.stdout.isascii())
 
         required = (
+            "Demo: deterministic reconstruction of a real incident.",
+            "Agent claim: the obsolete lockfile was deleted and two workflow triggers were updated.",
+            "Actual result: only the deletion landed; CI passed because the old trigger watched the deleted file.",
             "Case ID: 001-partial-workflow-fix",
             "Claim ID",
             "obsolete-lockfile-deleted",
             "workflow-triggers-updated",
             "green-run-proves-new-trigger",
             "change-merged",
-            "Overall verdict: partially_verified",
+            "Overall verdict: partially_verified - only part of the claims are supported.",
             "Provenance limitations: 4",
             "Full JSON: re-run this command with --format json for per-claim "
             "evidence references, source hashes, and provenance limitations.",
+            "Next: run proofrail draft-claims, then proofrail check-claims, then "
+            "proofrail verify-change on a real committed range: "
+            "https://github.com/DrDeese/Proofrail",
         )
         positions = [default.stdout.index(item) for item in required]
         self.assertEqual(positions, sorted(positions))
+
+    def test_demo_framing_is_excluded_from_normal_text_and_shared_region_matches(self) -> None:
+        demo = self._run_command("verify", "--demo", "--format", "text")
+        normal = self._run(
+            FIXTURES / "001-partial-workflow-fix", "--format", "text"
+        )
+        self.assertEqual(demo.returncode, 0, demo.stderr)
+        self.assertEqual(normal.returncode, 0, normal.stderr)
+
+        shared_start = demo.stdout.index("Case ID:")
+        shared_end = demo.stdout.index("\nNext:")
+        self.assertEqual(demo.stdout[shared_start:shared_end], normal.stdout)
+        for framing in (
+            "Demo: deterministic reconstruction",
+            "Agent claim:",
+            "Actual result:",
+            "Next: run proofrail draft-claims",
+            "https://github.com/DrDeese/Proofrail",
+        ):
+            self.assertNotIn(framing, normal.stdout)
+
+    def test_demo_next_step_commands_resolve(self) -> None:
+        completed = self._run_command("--help")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        for command in ("draft-claims", "check-claims", "verify-change"):
+            self.assertIn(command, completed.stdout)
 
     def test_output_file_matches_stdout_exactly(self) -> None:
         with tempfile.TemporaryDirectory(prefix="proofrail-cli-output-") as temporary:

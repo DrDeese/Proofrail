@@ -33,7 +33,10 @@ def render_text(result: dict[str, Any]) -> str:
         "-+-".join("-" * width for width in widths),
         *(table_row(row) for row in rows),
         "",
-        f"Overall verdict: {result['overall_verdict']}",
+        (
+            f"Overall verdict: {result['overall_verdict']} - "
+            "only part of the claims are supported."
+        ),
         "",
         f"Provenance limitations: {len(result['provenance_limitations'])}",
         (
@@ -42,6 +45,20 @@ def render_text(result: dict[str, Any]) -> str:
         ),
     ]
     return "\n".join(lines) + "\n"
+
+
+def render_demo_text(result: dict[str, Any]) -> str:
+    preamble = (
+        "Demo: deterministic reconstruction of a real incident.\n"
+        "Agent claim: the obsolete lockfile was deleted and two workflow triggers were updated.\n"
+        "Actual result: only the deletion landed; CI passed because the old trigger watched the deleted file.\n\n"
+    )
+    next_step = (
+        "\nNext: run proofrail draft-claims, then proofrail check-claims, then "
+        "proofrail verify-change on a real committed range: "
+        "https://github.com/DrDeese/Proofrail\n"
+    )
+    return preamble + render_text(result) + next_step
 
 
 def render_markdown(result: dict[str, Any]) -> str:

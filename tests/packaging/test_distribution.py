@@ -338,7 +338,8 @@ class DistributionTests(unittest.TestCase):
                 self.assertEqual(demo.returncode, 0, demo.stderr)
                 self.assertEqual(demo.stderr, "")
                 self.assertIn(
-                    "\nOverall verdict: partially_verified\n",
+                    "\nOverall verdict: partially_verified - "
+                    "only part of the claims are supported.\n",
                     demo.stdout,
                 )
                 demo_outputs.append(demo.stdout)
