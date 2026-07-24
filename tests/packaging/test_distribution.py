@@ -309,7 +309,7 @@ class DistributionTests(unittest.TestCase):
             installations: list[tuple[Path, Path, Path]] = []
             outputs: list[str] = []
             demo_outputs: list[str] = []
-            markdown_outputs: list[str] = []
+            text_outputs: list[str] = []
             schema_hashes: list[str] = []
             for name in ("first-clean-install", "second-clean-install-with-different-path"):
                 venv_dir = root / name
@@ -337,9 +337,9 @@ class DistributionTests(unittest.TestCase):
                 )
                 self.assertEqual(demo.returncode, 0, demo.stderr)
                 self.assertEqual(demo.stderr, "")
-                self.assertEqual(
-                    json.loads(demo.stdout)["overall_verdict"],
-                    "partially_verified",
+                self.assertIn(
+                    "\nOverall verdict: partially_verified\n",
+                    demo.stdout,
                 )
                 demo_outputs.append(demo.stdout)
                 schema_query = self._run(
@@ -353,7 +353,11 @@ class DistributionTests(unittest.TestCase):
 
                 case = root / f"case-{name}"
                 shutil.copytree(REPOSITORY_ROOT / "tests" / "fixtures" / "001-partial-workflow-fix", case)
-                verified = self._run([str(command), "verify", str(case)], cwd=root, environment=environment)
+                verified = self._run(
+                    [str(command), "verify", str(case), "--format", "json"],
+                    cwd=root,
+                    environment=environment,
+                )
                 self.assertEqual(verified.returncode, 0, verified.stderr)
                 result = json.loads(verified.stdout)
                 self.assertEqual(result["overall_verdict"], "partially_verified")
@@ -363,17 +367,17 @@ class DistributionTests(unittest.TestCase):
                 )
                 outputs.append(verified.stdout)
                 schema_hashes.append(result["sources"]["schema"]["sha256"])
-                markdown = self._run(
-                    [str(command), "verify", str(case), "--format", "markdown"],
+                text = self._run(
+                    [str(command), "verify", str(case), "--format", "text"],
                     cwd=root,
                     environment=environment,
                 )
-                self.assertEqual(markdown.returncode, 0, markdown.stderr)
-                markdown_outputs.append(markdown.stdout)
+                self.assertEqual(text.returncode, 0, text.stderr)
+                text_outputs.append(text.stdout)
 
             self.assertEqual(outputs[0], outputs[1])
             self.assertEqual(demo_outputs[0], demo_outputs[1])
-            self.assertEqual(markdown_outputs[0], markdown_outputs[1])
+            self.assertEqual(text_outputs[0], text_outputs[1])
             self.assertEqual(schema_hashes[0], schema_hashes[1])
             interpreter, command, packaged_schema = installations[0]
             help_result = self._run([str(command), "--help"], cwd=root, environment=environment)
@@ -452,6 +456,8 @@ class DistributionTests(unittest.TestCase):
                 "proofrail_verifier",
                 "verify",
                 "tests/fixtures/001-partial-workflow-fix",
+                "--format",
+                "json",
             ],
             cwd=REPOSITORY_ROOT,
             environment=environment,

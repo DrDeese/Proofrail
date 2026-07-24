@@ -1,4 +1,4 @@
-"""Render verifier results as stable JSON or plain Markdown."""
+"""Render verifier results as stable JSON, text, or plain Markdown."""
 
 from __future__ import annotations
 
@@ -8,6 +8,40 @@ from typing import Any
 
 def render_json(result: dict[str, Any]) -> str:
     return json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def render_text(result: dict[str, Any]) -> str:
+    headers = ("Claim ID", "Status", "Finding")
+    rows = [
+        (claim["claim_id"], claim["status"], claim["finding"])
+        for claim in result["claims"]
+    ]
+    widths = [
+        max(len(headers[index]), *(len(row[index]) for row in rows))
+        for index in range(len(headers))
+    ]
+
+    def table_row(values: tuple[str, str, str]) -> str:
+        return " | ".join(
+            value.ljust(widths[index]) for index, value in enumerate(values)
+        ).rstrip()
+
+    lines = [
+        f"Case ID: {result['case_id']}",
+        "",
+        table_row(headers),
+        "-+-".join("-" * width for width in widths),
+        *(table_row(row) for row in rows),
+        "",
+        f"Overall verdict: {result['overall_verdict']}",
+        "",
+        f"Provenance limitations: {len(result['provenance_limitations'])}",
+        (
+            "Full JSON: re-run this command with --format json for per-claim "
+            "evidence references, source hashes, and provenance limitations."
+        ),
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def render_markdown(result: dict[str, Any]) -> str:

@@ -44,7 +44,7 @@ from .policy import (
     write_new_atomic,
 )
 from .policy_rendering import render_policy_json, render_policy_markdown
-from .rendering import render_json, render_markdown
+from .rendering import render_json, render_text
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -54,7 +54,7 @@ def _parser() -> argparse.ArgumentParser:
     verify = commands.add_parser("verify", help="verify a supported local case directory")
     verify.add_argument("case_directory", type=Path, nargs="?")
     verify.add_argument("--demo", action="store_true")
-    verify.add_argument("--format", choices=("json", "markdown"), default="json")
+    verify.add_argument("--format", choices=("text", "json"), default="text")
     verify.add_argument("--output", type=Path)
     prepare = commands.add_parser(
         "prepare-case", help="prepare a case from a local committed Git range"
@@ -179,7 +179,7 @@ def _verify_case(arguments: argparse.Namespace, case_directory: Path) -> int:
         print(f"proofrail: invalid case: {error}", file=sys.stderr)
         return 3
 
-    rendered = render_json(result) if arguments.format == "json" else render_markdown(result)
+    rendered = render_json(result) if arguments.format == "json" else render_text(result)
     try:
         if arguments.output is None:
             sys.stdout.write(rendered)

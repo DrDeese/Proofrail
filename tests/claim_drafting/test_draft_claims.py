@@ -245,7 +245,15 @@ class DraftClaimsTests(unittest.TestCase):
             self.assertEqual(result["overall_verdict"], "verified")
             self.assertTrue(all(claim["status"] == "verified" for claim in result["claims"]))
             preserved = subprocess.run(
-                [sys.executable, "-m", "proofrail_verifier", "verify", str(case)],
+                [
+                    sys.executable,
+                    "-m",
+                    "proofrail_verifier",
+                    "verify",
+                    str(case),
+                    "--format",
+                    "json",
+                ],
                 cwd=ROOT, env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
             )

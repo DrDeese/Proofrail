@@ -15,6 +15,31 @@ from proofrail_verifier import __version__
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = REPOSITORY_ROOT / "tests" / "fixtures"
+EXPECTED_DEMO_JSON = (
+    '{"case_id":"001-partial-workflow-fix","claims":[{"claim_id":"obsolete-lockfile-deleted",'
+    '"evidence_ids":["actual-commit-diff"],"finding":"The final artifact deletes bun.lockb.",'
+    '"provenance_limitations":["No authenticated agent transcript is included.",'
+    '"The repository is a deterministic reconstruction of the founder incident."],'
+    '"status":"verified"},{"claim_id":"workflow-triggers-updated",'
+    '"evidence_ids":["actual-commit-diff"],"finding":"The workflow path filters contradict '
+    'the claim.","provenance_limitations":["No authenticated agent transcript is included.",'
+    '"The repository is a deterministic reconstruction of the founder incident."],'
+    '"status":"contradicted"},{"claim_id":"green-run-proves-new-trigger",'
+    '"evidence_ids":["reported-workflow-run"],"finding":"Supplied evidence cannot observe the '
+    'claimed outcome.","provenance_limitations":["No authenticated agent transcript is included.",'
+    '"No authenticated event, run, SHA, workflow version, or triggering-path provenance is '
+    'included."],"status":"unsupported"},{"claim_id":"change-merged","evidence_ids":[],'
+    '"finding":"Authenticated capable evidence is unavailable.","provenance_limitations":'
+    '["The offline fixture contains no merge provenance."],"status":"human_review_required"}],'
+    '"overall_verdict":"partially_verified","provenance_limitations":'
+    '["No authenticated agent transcript is included.","The repository is a deterministic '
+    'reconstruction of the founder incident.","No authenticated event, run, SHA, workflow '
+    'version, or triggering-path provenance is included.","The offline fixture contains no '
+    'merge provenance."],"sources":{"case":{"path":"001-partial-workflow-fix/case.json",'
+    '"sha256":"23e8625be0ede01f351808b359949b054dbf7c5c3b12605beccf40d99dbaeb9b"},'
+    '"schema":{"path":"schemas/case.schema.json","sha256":'
+    '"e09fe1aeb6e78eae1330aa935bec6dd19a81d42683aa234ac653a6f734ed5e12"}}}\n'
+)
 
 
 class ProofrailCliTests(unittest.TestCase):
@@ -78,7 +103,9 @@ class ProofrailCliTests(unittest.TestCase):
         return case_directory, schema
 
     def test_fixture_001_json_statuses(self) -> None:
-        completed = self._run(FIXTURES / "001-partial-workflow-fix")
+        completed = self._run(
+            FIXTURES / "001-partial-workflow-fix", "--format", "json"
+        )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stderr, "")
         self.assertEqual(
@@ -99,6 +126,8 @@ class ProofrailCliTests(unittest.TestCase):
             completed = self._run_command(
                 "verify",
                 "--demo",
+                "--format",
+                "json",
                 environment_overrides={"TMPDIR": str(temp_root)},
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -134,7 +163,7 @@ class ProofrailCliTests(unittest.TestCase):
                 Path(temporary), "001-partial-workflow-fix"
             )
             (case_directory / "actual.patch").write_text("", encoding="utf-8")
-            completed = self._run(case_directory)
+            completed = self._run(case_directory, "--format", "json")
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertEqual(json.loads(completed.stdout)["overall_verdict"], "contradicted")
 
@@ -150,29 +179,47 @@ class ProofrailCliTests(unittest.TestCase):
             },
         )
 
-    def test_markdown_contains_verdict_and_every_claim(self) -> None:
-        completed = self._run(
-            FIXTURES / "001-partial-workflow-fix", "--format", "markdown"
-        )
+    def test_demo_json_matches_recorded_pre_publication_payload(self) -> None:
+        completed = self._run_command("verify", "--demo", "--format", "json")
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("**Overall verdict:** `partially_verified`", completed.stdout)
-        self.assertIn("## What remains unverified", completed.stdout)
-        for claim in (
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(completed.stdout, EXPECTED_DEMO_JSON)
+
+    def test_text_is_default_and_has_ordered_plain_ascii_structure(self) -> None:
+        default = self._run_command("verify", "--demo")
+        explicit = self._run_command("verify", "--demo", "--format", "text")
+        self.assertEqual(default.returncode, 0, default.stderr)
+        self.assertEqual(explicit.returncode, 0, explicit.stderr)
+        self.assertEqual(default.stdout, explicit.stdout)
+        self.assertTrue(default.stdout.isascii())
+
+        required = (
+            "Case ID: 001-partial-workflow-fix",
+            "Claim ID",
             "obsolete-lockfile-deleted",
             "workflow-triggers-updated",
             "green-run-proves-new-trigger",
             "change-merged",
-        ):
-            self.assertIn(f"## Claim: {claim}", completed.stdout)
-        self.assertIn("`unsupported`", completed.stdout)
-        self.assertIn("`human_review_required`", completed.stdout)
+            "Overall verdict: partially_verified",
+            "Provenance limitations: 4",
+            "Full JSON: re-run this command with --format json for per-claim "
+            "evidence references, source hashes, and provenance limitations.",
+        )
+        positions = [default.stdout.index(item) for item in required]
+        self.assertEqual(positions, sorted(positions))
 
     def test_output_file_matches_stdout_exactly(self) -> None:
         with tempfile.TemporaryDirectory(prefix="proofrail-cli-output-") as temporary:
             output = Path(temporary) / "result.json"
-            stdout_run = self._run(FIXTURES / "002-incapable-validation-command")
+            stdout_run = self._run(
+                FIXTURES / "002-incapable-validation-command", "--format", "json"
+            )
             file_run = self._run(
-                FIXTURES / "002-incapable-validation-command", "--output", str(output)
+                FIXTURES / "002-incapable-validation-command",
+                "--format",
+                "json",
+                "--output",
+                str(output),
             )
             self.assertEqual(stdout_run.returncode, 0, stdout_run.stderr)
             self.assertEqual(file_run.returncode, 0, file_run.stderr)
@@ -252,8 +299,8 @@ class ProofrailCliTests(unittest.TestCase):
 
     def test_output_is_deterministic_across_runs(self) -> None:
         case_directory = FIXTURES / "002-incapable-validation-command"
-        first = self._run(case_directory, "--format", "markdown")
-        second = self._run(case_directory, "--format", "markdown")
+        first = self._run(case_directory, "--format", "text")
+        second = self._run(case_directory, "--format", "text")
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(first.stdout, second.stdout)

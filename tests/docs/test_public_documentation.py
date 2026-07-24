@@ -267,7 +267,15 @@ class PublicDocumentationTests(unittest.TestCase):
     def test_fixture_commands_execute(self) -> None:
         for fixture in ("001-partial-workflow-fix", "002-incapable-validation-command"):
             completed = subprocess.run(
-                [sys.executable, "-m", "proofrail_verifier", "verify", f"tests/fixtures/{fixture}"],
+                [
+                    sys.executable,
+                    "-m",
+                    "proofrail_verifier",
+                    "verify",
+                    f"tests/fixtures/{fixture}",
+                    "--format",
+                    "json",
+                ],
                 cwd=REPOSITORY_ROOT,
                 env={**__import__("os").environ, "PYTHONPATH": "src"},
                 text=True,
