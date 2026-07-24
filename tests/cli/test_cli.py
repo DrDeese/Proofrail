@@ -186,39 +186,66 @@ class ProofrailCliTests(unittest.TestCase):
         self.assertEqual(completed.stdout, EXPECTED_DEMO_JSON)
 
     def test_demo_text_is_default_and_has_ordered_plain_ascii_structure(self) -> None:
-        default = self._run_command("verify", "--demo")
-        explicit = self._run_command("verify", "--demo", "--format", "text")
+        environment = {"COLUMNS": "80"}
+        default = self._run_command(
+            "verify", "--demo", environment_overrides=environment
+        )
+        explicit = self._run_command(
+            "verify",
+            "--demo",
+            "--format",
+            "text",
+            environment_overrides=environment,
+        )
         self.assertEqual(default.returncode, 0, default.stderr)
         self.assertEqual(explicit.returncode, 0, explicit.stderr)
         self.assertEqual(default.stdout, explicit.stdout)
         self.assertTrue(default.stdout.isascii())
+        self.assertTrue(all(len(line) <= 80 for line in default.stdout.splitlines()))
 
         required = (
             "Demo: deterministic reconstruction of a real incident.",
-            "Agent claim: the obsolete lockfile was deleted and two workflow triggers were updated.",
-            "Actual result: only the deletion landed; CI passed because the old trigger watched the deleted file, so green CI did not prove the new triggers worked.",
+            "Agent claim:",
+            "Actual result:",
             "Case ID: 001-partial-workflow-fix",
             "Claim ID",
             "obsolete-lockfile-deleted",
             "workflow-triggers-updated",
             "green-run-proves-new-trigger",
             "change-merged",
-            "Overall verdict: partially_verified - some claims are supported, "
-            "while others are not or still need human review.",
+            "Overall verdict: partially_verified",
             "Provenance limitations: 4",
-            "Full JSON: re-run this command with --format json for per-claim "
-            "evidence references, source hashes, and provenance limitations.",
-            "Next: run proofrail draft-claims, then proofrail check-claims, then "
-            "proofrail verify-change on a real committed range: "
-            "https://github.com/DrDeese/Proofrail",
+            "Full JSON:",
+            "Next:",
         )
         positions = [default.stdout.index(item) for item in required]
         self.assertEqual(positions, sorted(positions))
+        separator = next(
+            line
+            for line in default.stdout.splitlines()
+            if "+" in line and set(line) <= {"-", "+"}
+        )
+        self.assertEqual(len(separator), 80)
+        self.assertIn(
+            " " * 28 + " | " + " " * 21 + " | " + "deletes bun.lockb.",
+            default.stdout.splitlines(),
+        )
 
     def test_demo_framing_is_excluded_from_normal_text_and_shared_region_matches(self) -> None:
-        demo = self._run_command("verify", "--demo", "--format", "text")
-        normal = self._run(
-            FIXTURES / "001-partial-workflow-fix", "--format", "text"
+        environment = {"COLUMNS": "80"}
+        demo = self._run_command(
+            "verify",
+            "--demo",
+            "--format",
+            "text",
+            environment_overrides=environment,
+        )
+        normal = self._run_command(
+            "verify",
+            str(FIXTURES / "001-partial-workflow-fix"),
+            "--format",
+            "text",
+            environment_overrides=environment,
         )
         self.assertEqual(demo.returncode, 0, demo.stderr)
         self.assertEqual(normal.returncode, 0, normal.stderr)
@@ -234,6 +261,50 @@ class ProofrailCliTests(unittest.TestCase):
             "https://github.com/DrDeese/Proofrail",
         ):
             self.assertNotIn(framing, normal.stdout)
+
+    def test_text_output_is_unwrapped_at_200_columns(self) -> None:
+        environment = {"COLUMNS": "200"}
+        demo = self._run_command(
+            "verify", "--demo", environment_overrides=environment
+        )
+        normal = self._run_command(
+            "verify",
+            str(FIXTURES / "001-partial-workflow-fix"),
+            environment_overrides=environment,
+        )
+        self.assertEqual(demo.returncode, 0, demo.stderr)
+        self.assertEqual(normal.returncode, 0, normal.stderr)
+        self.assertTrue(all(len(line) <= 200 for line in demo.stdout.splitlines()))
+        for claim_id, finding in (
+            ("obsolete-lockfile-deleted", "The final artifact deletes bun.lockb."),
+            ("workflow-triggers-updated", "The workflow path filters contradict the claim."),
+            (
+                "green-run-proves-new-trigger",
+                "Supplied evidence cannot observe the claimed outcome.",
+            ),
+            ("change-merged", "Authenticated capable evidence is unavailable."),
+        ):
+            self.assertTrue(
+                any(
+                    claim_id in line and finding in line
+                    for line in normal.stdout.splitlines()
+                )
+            )
+        normal_lines = normal.stdout.splitlines()
+        table_start = next(
+            index for index, line in enumerate(normal_lines) if line.startswith("Claim ID")
+        )
+        table_end = normal_lines.index("", table_start)
+        table_lines = normal_lines[table_start:table_end]
+        content_rows = [
+            line for line in table_lines if "|" in line and not line.startswith("Claim ID")
+        ]
+        longest_row = max(len(line) for line in content_rows)
+        self.assertLess(longest_row, 200)
+        self.assertTrue(all(len(line) <= longest_row for line in table_lines))
+        shared_start = demo.stdout.index("Case ID:")
+        shared_end = demo.stdout.index("\nNext:")
+        self.assertEqual(demo.stdout[shared_start:shared_end], normal.stdout)
 
     def test_demo_next_step_commands_resolve(self) -> None:
         completed = self._run_command("--help")
@@ -332,8 +403,20 @@ class ProofrailCliTests(unittest.TestCase):
 
     def test_output_is_deterministic_across_runs(self) -> None:
         case_directory = FIXTURES / "002-incapable-validation-command"
-        first = self._run(case_directory, "--format", "text")
-        second = self._run(case_directory, "--format", "text")
+        first = self._run_command(
+            "verify",
+            str(case_directory),
+            "--format",
+            "text",
+            environment_overrides={"COLUMNS": "80"},
+        )
+        second = self._run_command(
+            "verify",
+            str(case_directory),
+            "--format",
+            "text",
+            environment_overrides={"COLUMNS": "80"},
+        )
         self.assertEqual(first.returncode, 0, first.stderr)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertEqual(first.stdout, second.stdout)

@@ -7,8 +7,8 @@ named `pypi`.
 ## Version source
 
 `proofrail_verifier.__version__` is the package version source. The current
-public-alpha version is `0.1.0a1`. A release tag must use the same version with
-a leading `v`, for example `v0.1.0a1`.
+public-alpha version is `0.1.0a2`. A release tag must use the same version with
+a leading `v`, for example `v0.1.0a2`.
 
 ## Build locally
 

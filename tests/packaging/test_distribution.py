@@ -22,7 +22,7 @@ BUILD_MODULE = runpy.run_path(str(BUILD_SCRIPT))
 ReleaseBuildError = BUILD_MODULE["ReleaseBuildError"]
 normalize_sdist = BUILD_MODULE["normalize_sdist"]
 NORMALIZED_MTIME = BUILD_MODULE["NORMALIZED_MTIME"]
-VERSION = "0.1.0a1"
+VERSION = "0.1.0a2"
 DEMO_RELATIVE_FILES = (
     "actual.patch",
     "case.json",
@@ -306,6 +306,7 @@ class DistributionTests(unittest.TestCase):
             wheel, _ = self._build_release(project, root / "release")
             environment = os.environ.copy()
             environment.pop("PYTHONPATH", None)
+            environment["COLUMNS"] = "80"
             installations: list[tuple[Path, Path, Path]] = []
             outputs: list[str] = []
             demo_outputs: list[str] = []
@@ -338,10 +339,11 @@ class DistributionTests(unittest.TestCase):
                 self.assertEqual(demo.returncode, 0, demo.stderr)
                 self.assertEqual(demo.stderr, "")
                 self.assertIn(
-                    "\nOverall verdict: partially_verified - "
-                    "some claims are supported, while others are not or "
-                    "still need human review.\n",
+                    "\nOverall verdict: partially_verified",
                     demo.stdout,
+                )
+                self.assertTrue(
+                    all(len(line) <= 80 for line in demo.stdout.splitlines())
                 )
                 demo_outputs.append(demo.stdout)
                 schema_query = self._run(

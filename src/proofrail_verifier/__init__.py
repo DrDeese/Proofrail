@@ -1,6 +1,6 @@
 """Deterministic offline verification for supported Proofrail fixtures."""
 
-__version__ = "0.1.0a1"
+__version__ = "0.1.0a2"
 
 from .change_verification import verify_change
 from .claim_drafting import DraftClaimsResult, draft_claims
