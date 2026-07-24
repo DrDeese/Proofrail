@@ -27,17 +27,17 @@ Do not use this skill in place of implementation, code review, tests, `proofrail
 4. Define one supported local Proofrail invocation before running the workflow:
 
    ```sh
-   # After installing a locally built wheel:
+   # Primary path, after: pip install proofrail
    PROOFRAIL_CMD="proofrail"
 
-   # Or, from a Proofrail source checkout:
+   # Secondary option, from a Proofrail source checkout:
    export PYTHONPATH="/absolute/path/to/Proofrail/src"
    PROOFRAIL_CMD="python3 -m proofrail_verifier"
    ```
 
    Select one definition, not both. `PYTHONPATH` identifies the `src` directory in the Proofrail source checkout. The later `--repo` argument identifies the separate software repository whose committed range Proofrail will inspect.
 
-Proofrail is a public alpha. It is not on PyPI and is not hosted. Its locally built release materials still use the earlier Internal Alpha packaging label.
+Proofrail is a public alpha distributed on PyPI. It is local and read-only, not hosted.
 
 ## Run the acceptance workflow
 

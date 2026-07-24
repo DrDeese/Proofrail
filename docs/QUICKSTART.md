@@ -1,30 +1,24 @@
 # Proofrail quick start
 
-This guide runs Proofrail’s offline interfaces from either a local wheel or a
-source checkout. Proofrail is not published to a package index.
+This guide runs Proofrail's local, read-only interfaces from either its PyPI
+package or a source checkout.
 
-## Install a local wheel
+## Install from PyPI
 
-Build with the deterministic release helper, which invokes the repository's
-existing local PEP 517 backend in a disposable copy and normalizes the final
-source distribution. Then install only the local wheel into a clean virtual
-environment. This does not fetch or install dependencies.
+Requires Python 3.9 or newer:
 
 ```sh
-python3 scripts/build_release_artifacts.py --repository . --output-dir dist
-python3 -m venv .venv
-. .venv/bin/activate
-python3 -m pip install --no-index --no-deps dist/proofrail_verifier-0.1.0a1-py3-none-any.whl
+pip install proofrail
+proofrail verify --demo
 ```
 
-The remaining commands use `proofrail` and require no `PYTHONPATH` setting.
+## No-install source checkout
 
-## Source-checkout development
-
-For development directly from the checkout, use the module entry point:
+From a fresh clone, run the preserved fixture without installing:
 
 ```sh
-export PYTHONPATH=src
+PYTHONPATH=src python3 -m proofrail_verifier verify \
+  tests/fixtures/001-partial-workflow-fix
 ```
 
 ## Run the preserved fixtures
@@ -34,7 +28,10 @@ proofrail verify tests/fixtures/001-partial-workflow-fix
 proofrail verify tests/fixtures/002-incapable-validation-command
 ```
 
-Each command emits deterministic JSON. A completed `partially_verified`, `unsupported`, `contradicted`, or `human_review_required` verdict is a result, not a verifier failure.
+Each command emits plain text by default. Add `--format json` for deterministic
+machine-readable output. A completed `partially_verified`, `unsupported`,
+`contradicted`, or `human_review_required` verdict is a result, not a verifier
+failure.
 
 ## Draft, check, and verify a real included range
 

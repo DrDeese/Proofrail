@@ -35,7 +35,7 @@ def render_text(result: dict[str, Any]) -> str:
         "",
         (
             f"Overall verdict: {result['overall_verdict']} - "
-            "only part of the claims are supported."
+            "some claims are supported, while others are not or still need human review."
         ),
         "",
         f"Provenance limitations: {len(result['provenance_limitations'])}",
@@ -51,7 +51,7 @@ def render_demo_text(result: dict[str, Any]) -> str:
     preamble = (
         "Demo: deterministic reconstruction of a real incident.\n"
         "Agent claim: the obsolete lockfile was deleted and two workflow triggers were updated.\n"
-        "Actual result: only the deletion landed; CI passed because the old trigger watched the deleted file.\n\n"
+        "Actual result: only the deletion landed; CI passed because the old trigger watched the deleted file, so green CI did not prove the new triggers worked.\n\n"
     )
     next_step = (
         "\nNext: run proofrail draft-claims, then proofrail check-claims, then "

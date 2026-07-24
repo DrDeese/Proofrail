@@ -1,22 +1,21 @@
-# Releasing Proofrail internally
+# Releasing Proofrail
 
-Proofrail is currently an **Internal Alpha**. This guide covers a local,
-offline distribution artifact only; it does not authorize a public release,
-package-index upload, Git tag, GitHub Release, or network access.
+Proofrail is a **Public alpha** distributed through PyPI. Publication uses the
+repository's trusted-publishing workflow and the protected GitHub environment
+named `pypi`.
 
 ## Version source
 
 `proofrail_verifier.__version__` is the package version source. The current
-Internal Alpha version is `0.1.0a1`.
+public-alpha version is `0.1.0a1`. A release tag must use the same version with
+a leading `v`, for example `v0.1.0a1`.
 
 ## Build locally
 
-Use the repository's existing Python environment and build backend. Do not
-install dependencies or allow a build tool to fetch from a package index.
-Setuptools 58.0.4 creates the raw PEP 517 wheel and source distribution in a
-disposable source copy. The release helper leaves the reproducible wheel bytes
-unchanged and deterministically normalizes the raw sdist into the final release
-sdist.
+Use the pinned build backend: setuptools 58.0.4 and wheel 0.37.0. The release
+helper invokes that backend from the current Python environment in a disposable
+source copy. It leaves the wheel bytes unchanged and deterministically
+normalizes the raw sdist into the final release sdist.
 
 ```sh
 python3 scripts/build_release_artifacts.py --repository . --output-dir dist
@@ -34,11 +33,14 @@ fixture and Git-range commands documented in [QUICKSTART.md](QUICKSTART.md).
 Record SHA-256 hashes for the wheel and source distribution, and rebuild with
 the same `SOURCE_DATE_EPOCH` to compare byte-for-byte output.
 
-## Scope and rollback
+## Publish through trusted publishing
 
-An Internal Alpha artifact is suitable only for controlled local evaluation.
-If an unpublished artifact is unsuitable, discard that local artifact and
-rebuild from a corrected committed range. Do not represent removal of a local
-file as a public-package withdrawal. Future tags, releases, package-index
-publication, compatibility promises, and support commitments require separate
-human authorization.
+The `publish-pypi.yml` workflow runs on `v*` tags and supports manual reruns
+from a tag ref. Its build job tests and validates the artifacts, checks that
+both artifact versions match the tag, and passes them to a separate
+OIDC-authorized publish job. The publish job uses the `pypi` environment and
+does not use an API token.
+
+Creating or pushing a release tag remains an explicit human-authorized action.
+Because PyPI release files are immutable, correct a failed pre-publication
+build before tagging rather than relying on replacement uploads.

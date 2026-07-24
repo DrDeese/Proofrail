@@ -35,7 +35,10 @@ class PublicDocumentationTests(unittest.TestCase):
 
     def test_readme_has_first_time_visitor_facts(self) -> None:
         self.assertIn("Acceptance verification for AI-generated code changes.", self.readme)
-        self.assertIn("Internal Alpha", self.readme)
+        self.assertIn("pip install proofrail", self.readme)
+        self.assertIn("proofrail verify --demo", self.readme)
+        self.assertNotIn("Internal Alpha", self.readme)
+        self.assertNotIn("not on PyPI", self.readme)
         for status in ("verified", "unsupported", "contradicted", "human_review_required"):
             self.assertIn(f"`{status}`", self.readme)
         for outcome in ("obsolete lockfile deletion", "workflow trigger update", "green run proves the new trigger"):
@@ -51,7 +54,10 @@ class PublicDocumentationTests(unittest.TestCase):
             "docs/PILOT_GUIDE.md",
             "docs/examples/partial-workflow-fix.md",
         ):
-            self.assertIn(relative, self.readme)
+            self.assertIn(
+                f"https://github.com/DrDeese/Proofrail/blob/main/{relative}",
+                self.readme,
+            )
             self.assertTrue((REPOSITORY_ROOT / relative).is_file(), relative)
 
     def test_claude_code_integration_has_required_structure(self) -> None:
@@ -115,11 +121,24 @@ class PublicDocumentationTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_public_documentation_local_links_exist(self) -> None:
-        for source, documentation in (
+        sources = (
             (REPOSITORY_ROOT / "README.md", self.readme),
             (REPOSITORY_ROOT / "docs" / "CLAUDE_CODE.md", self.claude_code),
-        ):
+            (REPOSITORY_ROOT / "docs" / "QUICKSTART.md", self.quickstart),
+            (
+                REPOSITORY_ROOT / "docs" / "RELEASING.md",
+                (REPOSITORY_ROOT / "docs" / "RELEASING.md").read_text(
+                    encoding="utf-8"
+                ),
+            ),
+        )
+        for source, documentation in sources:
             for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", documentation):
+                github_prefix = "https://github.com/DrDeese/Proofrail/blob/main/"
+                if target.startswith(github_prefix):
+                    resolved = REPOSITORY_ROOT / target.removeprefix(github_prefix)
+                    self.assertTrue(resolved.exists(), f"{source}: {target}")
+                    continue
                 if "://" in target or target.startswith("#"):
                     continue
                 resolved = (source.parent / target.split("#", 1)[0]).resolve()
@@ -229,25 +248,19 @@ class PublicDocumentationTests(unittest.TestCase):
         pip_install_lines = [
             line.strip()
             for line in documentation.splitlines()
-            if "pip install" in line
+            if line.strip().startswith("pip install ")
         ]
         self.assertTrue(pip_install_lines)
         for line in pip_install_lines:
-            self.assertRegex(
-                line,
-                r"^python3 -m pip install --no-index --no-deps dist/proofrail_verifier-[^ ]+\.whl$",
-            )
+            self.assertEqual(line, "pip install proofrail")
 
     def test_maturity_and_pilot_boundaries_are_explicit(self) -> None:
         prohibited = ("production-ready", "enterprise-ready", "guarantees correctness", "universal verifier")
         for value in prohibited:
             self.assertNotIn(value, self.readme.lower())
-        self.assertIn(
-            "Local Internal Alpha wheel and source-distribution artifacts can be built offline.",
-            self.status,
-        )
+        self.assertIn("Published PyPI package with a local `proofrail` command.", self.status)
+        self.assertIn("**Public alpha**", self.status)
         for limitation in (
-            "No public package-index distribution; local Internal Alpha artifacts only.",
             "No stable compatibility policy.",
             "No hosted service.",
             "No authentication of authorship or timestamps.",
@@ -259,8 +272,9 @@ class PublicDocumentationTests(unittest.TestCase):
         self.assertIn("At least ten real pull requests are evaluated.", self.pilot)
 
     def test_user_sections_precede_development_and_paths_are_portable(self) -> None:
+        self.assertLess(self.readme.index("pip install proofrail"), self.readme.index("| Claim | Proofrail result |"))
+        self.assertLess(self.readme.index("| Claim | Proofrail result |"), self.readme.index("## What Proofrail is"))
         self.assertLess(self.readme.index("## What Proofrail is"), self.readme.index("## Development and contributing"))
-        self.assertLess(self.readme.index("## Five-minute quick start"), self.readme.index("## Development and contributing"))
         for path in (REPOSITORY_ROOT / "README.md", REPOSITORY_ROOT / "docs" / "CLAUDE_CODE.md", REPOSITORY_ROOT / "docs" / "claude-code-instructions.md", REPOSITORY_ROOT / "docs" / "QUICKSTART.md", REPOSITORY_ROOT / "docs" / "PROJECT_STATUS.md", REPOSITORY_ROOT / "docs" / "PILOT_GUIDE.md", REPOSITORY_ROOT / "docs" / "examples" / "partial-workflow-fix.md"):
             self.assertNotRegex(path.read_text(encoding="utf-8"), r"/(Users|home|private)/")
 

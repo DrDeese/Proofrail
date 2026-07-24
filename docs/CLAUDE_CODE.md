@@ -19,10 +19,10 @@ cat docs/claude-code-instructions.md >> CLAUDE.md
 
 ## Run the workflow
 
-Proofrail is not on PyPI and is not hosted. Choose one local invocation:
+Proofrail is available on PyPI and is not hosted. Choose one local invocation:
 
 ```sh
-# After installing a locally built wheel:
+# After installation with: pip install proofrail
 PROOFRAIL_CMD="proofrail"
 
 # Or from a Proofrail source checkout (choose this instead of the line above):
@@ -117,7 +117,7 @@ claim under “What Proofrail verified.”
 
 ## Current limitations
 
-Proofrail is a public alpha. It is not on PyPI and is not a hosted service. Its
+Proofrail is a public alpha distributed on PyPI, not a hosted service. Its
 current deterministic Git-range workflow verifies bounded artifact facts such
 as path-level changes. Path-level verification does not automatically prove
 runtime behavior, deployment state, external-system behavior, authorship, or

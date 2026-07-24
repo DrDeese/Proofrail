@@ -2,7 +2,7 @@
 
 ## Maturity
 
-**Internal Alpha**
+**Public alpha**
 
 Proofrail is suitable for controlled internal repositories, technically capable design partners, and read-only CI evaluation. It is not yet suitable as a turnkey hosted platform, a universal behavioral verifier, or a supported general-availability product.
 
@@ -17,11 +17,11 @@ Proofrail is suitable for controlled internal repositories, technically capable 
 - Read-only workflow permissions.
 - Deterministic preflight.
 - Structured scope escalation.
-- Local Internal Alpha wheel and source-distribution artifacts can be built offline.
+- Published PyPI package with a local `proofrail` command.
+- Reproducible wheel and source-distribution artifacts can be built offline.
 
 ## Current limitations
 
-- No public package-index distribution; local Internal Alpha artifacts only.
 - No stable compatibility policy. Compatibility is not guaranteed across alpha releases.
 - No hosted service.
 - Limited external-repository evidence.

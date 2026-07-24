@@ -196,14 +196,15 @@ class ProofrailCliTests(unittest.TestCase):
         required = (
             "Demo: deterministic reconstruction of a real incident.",
             "Agent claim: the obsolete lockfile was deleted and two workflow triggers were updated.",
-            "Actual result: only the deletion landed; CI passed because the old trigger watched the deleted file.",
+            "Actual result: only the deletion landed; CI passed because the old trigger watched the deleted file, so green CI did not prove the new triggers worked.",
             "Case ID: 001-partial-workflow-fix",
             "Claim ID",
             "obsolete-lockfile-deleted",
             "workflow-triggers-updated",
             "green-run-proves-new-trigger",
             "change-merged",
-            "Overall verdict: partially_verified - only part of the claims are supported.",
+            "Overall verdict: partially_verified - some claims are supported, "
+            "while others are not or still need human review.",
             "Provenance limitations: 4",
             "Full JSON: re-run this command with --format json for per-claim "
             "evidence references, source hashes, and provenance limitations.",
